@@ -3,6 +3,7 @@
 #include "storage.h"
 #include "records.h"
 #include "PageManager.h"
+#include "BufferPool.h"
 
 void command_loop(DatabaseConfig *database);
 
@@ -38,6 +39,11 @@ if (!record_store_initialize(database.storage_path))
 if (!page_manager_initialize(database.storage_path))
 {
     printf("\nLuraXDB could not initialize page storage.\n");
+    return 1;
+}
+if (!buffer_pool_initialize())
+{
+    printf("\nLuraXDB could not initialize the buffer pool.\n");
     return 1;
 }
 

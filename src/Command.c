@@ -5,6 +5,7 @@
 #include "storage.h"
 #include "records.h"
 #include "PageManager.h"
+#include "BufferPool.h"
 
 void show_help(void)
 {
@@ -23,6 +24,10 @@ printf("LIST          - List all records\n");
 printf("PAGEINFO      - INFORMATION about the PAGE\n");
 printf("PAGEDETAIL    - INFORMATION about the PAGEDETAILS\n");
 printf("PAGEID        - INFORMATION about the PAGEID\n");
+printf("BPOOLINFO - Display buffer pool statistics\n");
+printf("BPWRITE <id> <text> - Write text through the buffer pool\n");
+printf("BPREAD <id> - Read text through the buffer pool\n");
+printf("BPRESET - Reset cache statistics\n");
 }
 
 void clear_screen()
@@ -158,6 +163,69 @@ void show_version(void)
         {
             database_show_config(database);
         }
+        else if (strcmp(operation, "BPOOLINFO") == 0)
+{
+    buffer_pool_show_info();
+}
+else if (strcmp(operation, "BPWRITE") == 0)
+{
+    int page_id;
+    int consumed = 0;
+    char *text;
+
+    if (sscanf(arguments, "%d%n", &page_id, &consumed) != 1)
+    {
+        printf("Usage: BPWRITE <id> <text>\n");
+        continue;
+    }
+
+    text = arguments + consumed;
+
+    while (isspace((unsigned char)*text))
+    {
+        text++;
+    }
+
+    if (*text == '\0')
+    {
+        printf("Usage: BPWRITE <id> <text>\n");
+        continue;
+    }
+
+    buffer_pool_write_text(page_id, text);
+}
+else if (strcmp(operation, "BPREAD") == 0)
+{
+    int page_id;
+    int consumed = 0;
+    char buffer[PAGE_SIZE];
+
+    if (sscanf(arguments, "%d%n", &page_id, &consumed) != 1)
+    {
+        printf("Usage: BPREAD <id>\n");
+        continue;
+    }
+
+    while (isspace((unsigned char)arguments[consumed]))
+    {
+        consumed++;
+    }
+
+    if (arguments[consumed] != '\0')
+    {
+        printf("Usage: BPREAD <id>\n");
+        continue;
+    }
+
+    if (buffer_pool_read_text(page_id, buffer, sizeof(buffer)))
+    {
+        printf("Value: %s\n", buffer);
+    }
+}
+else if (strcmp(operation, "BPRESET") == 0)
+{
+    buffer_pool_reset_stats();
+}
         else if (strcmp(operation, "STORAGE") == 0)
         {
             storage_show_info(database);
@@ -235,6 +303,7 @@ void show_version(void)
         {
             record_store_list();
         }
+
         else if (strcmp(operation, "EXIT") == 0)
         {
             printf("Shutting down LuraXDB CLI...\n");
@@ -244,6 +313,65 @@ void show_version(void)
         {
             clear_screen();
         }
+        else if (strcmp(operation, "PAGEINFO") == 0)
+{
+    page_manager_show_info();
+}
+else if (strcmp(operation, "PAGEWRITE") == 0)
+{
+    int page_id;
+    int consumed = 0;
+    char *text;
+
+    if (sscanf(arguments, "%d%n", &page_id, &consumed) != 1)
+    {
+        printf("Usage: PAGEWRITE <id> <text>\n");
+        continue;
+    }
+
+    text = arguments + consumed;
+
+    while (isspace((unsigned char)*text))
+    {
+        text++;
+    }
+
+    if (*text == '\0')
+    {
+        printf("Usage: PAGEWRITE <id> <text>\n");
+        continue;
+    }
+
+    page_manager_write_text(page_id, text);
+}
+else if (strcmp(operation, "PAGEREAD") == 0)
+{
+    int page_id;
+    int consumed = 0;
+    char buffer[PAGE_SIZE];
+
+    if (sscanf(arguments, "%d%n", &page_id, &consumed) != 1)
+    {
+        printf("Usage: PAGEREAD <id>\n");
+        continue;
+    }
+
+    while (isspace((unsigned char)arguments[consumed]))
+    {
+        consumed++;
+    }
+
+    if (arguments[consumed] != '\0')
+    {
+        printf("Usage: PAGEREAD <id>\n");
+        continue;
+    }
+
+    if (page_manager_read_text(page_id, buffer, sizeof(buffer)))
+    {
+        printf("Page %d contents: %s\n", page_id, buffer);
+    }
+}
         else
         {
             printf("Unknown command: %s\n", operation);
