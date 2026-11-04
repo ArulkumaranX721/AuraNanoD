@@ -3,8 +3,9 @@
 #include <ctype.h>
 #include "Database.h"
 #include "storage.h"
-#include "records.h"
+#include "RecordManager.h"
 #include "PageManager.h"
+#include <stdlib.h>
 #include "BufferPool.h"
 
 void show_help(void)
@@ -18,6 +19,7 @@ void show_help(void)
     printf("CONFIG - Display database configuration\n");
     printf("STORAGE - Display Storage Information\n");
     printf("PUT <key> <value> - Store a record\n");
+    printf("UPDATE <key> <value> - Update an existing record\n");
 printf("GET <key>     - Retrieve a record\n");
 printf("DELETE <key>  - Delete a record\n");
 printf("LIST          - List all records\n");
@@ -230,80 +232,118 @@ else if (strcmp(operation, "BPRESET") == 0)
         {
             storage_show_info(database);
         }
-        else if (strcmp(operation, "PUT") == 0)
-        {
-            char key[KEY_SIZE];
-            char *value_start = arguments;
+       else if (strcmp(operation, "PUT") == 0)
+{
+    char key[RM_MAX_KEY_SIZE];
+    char *value_start = arguments;
 
-            size_t key_length = 0;
+    size_t key_length = 0;
 
-            while (value_start[key_length] != '\0' &&
-                   !isspace((unsigned char)value_start[key_length]))
-            {
-                key_length++;
-            }
+    while (value_start[key_length] != '\0' &&
+           !isspace((unsigned char)value_start[key_length]))
+    {
+        key_length++;
+    }
 
-            if (key_length == 0 || key_length >= sizeof(key))
-            {
-                printf("Usage: PUT <key> <value>\n");
-                continue;
-            }
+    if (key_length == 0 || key_length >= sizeof(key))
+    {
+        printf("Usage: PUT <key> <value>\n");
+        continue;
+    }
 
-            memcpy(key, value_start, key_length);
-            key[key_length] = '\0';
+    memcpy(key, value_start, key_length);
+    key[key_length] = '\0';
 
-            value_start += key_length;
+    value_start += key_length;
 
-            while (isspace((unsigned char)*value_start))
-            {
-                value_start++;
-            }
+    while (isspace((unsigned char)*value_start))
+    {
+        value_start++;
+    }
 
-            if (*value_start == '\0')
-            {
-                printf("Usage: PUT <key> <value>\n");
-                continue;
-            }
+    if (*value_start == '\0')
+    {
+        printf("Usage: PUT <key> <value>\n");
+        continue;
+    }
 
-            record_store_put(key, value_start);
-        }
+    record_manager_insert(key, value_start);
+}
+else if (strcmp(operation, "UPDATE") == 0)
+{
+    char key[RM_MAX_KEY_SIZE];
+    char *value_start = arguments;
+
+    size_t key_length = 0;
+
+    while (value_start[key_length] != '\0' &&
+           !isspace((unsigned char)value_start[key_length]))
+    {
+        key_length++;
+    }
+
+    if (key_length == 0 || key_length >= sizeof(key))
+    {
+        printf("Usage: UPDATE <key> <new_value>\n");
+        continue;
+    }
+
+    memcpy(key, value_start, key_length);
+    key[key_length] = '\0';
+
+    value_start += key_length;
+
+    while (isspace((unsigned char)*value_start))
+    {
+        value_start++;
+    }
+
+    if (*value_start == '\0')
+    {
+        printf("Usage: UPDATE <key> <new_value>\n");
+        continue;
+    }
+
+    record_manager_update(key, value_start);
+}
         else if (strcmp(operation, "GET") == 0)
-        {
-            char key[KEY_SIZE];
-            char value[VALUE_SIZE];
+{
+    char key[RM_MAX_KEY_SIZE];
+    RM_Record result;
 
-            if (sscanf(arguments, "%63s", key) != 1)
-            {
-                printf("Usage: GET <key>\n");
-                continue;
-            }
+    if (sscanf(arguments, "%63s", key) != 1)
+    {
+        printf("Usage: GET <key>\n");
+        continue;
+    }
 
-            if (record_store_get(key, value, sizeof(value)))
-            {
-                printf("Value: %s\n", value);
-            }
-            else
-            {
-                printf("Error: Key not found.\n");
-            }
-        }
-        else if (strcmp(operation, "DELETE") == 0)
-        {
-            char key[KEY_SIZE];
+    if (record_manager_find(key, &result))
+    {
+        printf("\nRecord Found\n");
+        printf("Key   : %s\n", result.key);
+        printf("Value : %s\n", result.value);
+    }
+    else
+    {
+        printf("Error: Key not found.\n");
+    }
+}
+       else if (strcmp(operation, "DELETE") == 0)
+{
+    char key[RM_MAX_KEY_SIZE];
 
-            if (sscanf(arguments, "%63s", key) != 1)
-            {
-                printf("Usage: DELETE <key>\n");
-                continue;
-            }
+    if (sscanf(arguments, "%63s", key) != 1)
+    {
+        printf("Usage: DELETE <key>\n");
+        continue;
+    }
 
-            record_store_delete(key);
-        }
-        else if (strcmp(operation, "LIST") == 0)
-        {
-            record_store_list();
-        }
-
+    record_manager_delete(key);
+}
+        else if (strcmp(command, "LIST") == 0)
+{
+    record_manager_list();
+}
         else if (strcmp(operation, "EXIT") == 0)
         {
             printf("Shutting down LuraXDB CLI...\n");

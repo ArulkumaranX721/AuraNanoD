@@ -8,7 +8,10 @@ typedef struct
     int page_id;
     int valid;
     unsigned long last_used;
-    char data[PAGE_SIZE];
+
+    /* Store all 4096 bytes, including binary zero bytes */
+    unsigned char data[PAGE_SIZE];
+
 } BufferFrame;
 
 static BufferFrame frames[BUFFER_POOL_SIZE];
@@ -17,6 +20,8 @@ static unsigned long access_counter = 0;
 static unsigned long cache_hits = 0;
 static unsigned long cache_misses = 0;
 
+
+/* Find a page already loaded into memory */
 static int find_frame(int page_id)
 {
     for (int i = 0; i < BUFFER_POOL_SIZE; i++)
@@ -30,6 +35,8 @@ static int find_frame(int page_id)
     return -1;
 }
 
+
+/* Select an empty frame or the least recently used frame */
 static int select_frame(void)
 {
     int oldest_frame = 0;
@@ -51,11 +58,15 @@ static int select_frame(void)
     return oldest_frame;
 }
 
+
+/* Update LRU access time */
 static void update_access_time(int frame_index)
 {
     frames[frame_index].last_used = ++access_counter;
 }
 
+
+/* Initialize the buffer pool */
 int buffer_pool_initialize(void)
 {
     memset(frames, 0, sizeof(frames));
@@ -71,9 +82,13 @@ int buffer_pool_initialize(void)
     return 1;
 }
 
+
+/* Read a text page through the buffer pool */
 int buffer_pool_read_text(int page_id, char *buffer, int buffer_size)
 {
+    unsigned char page_data[PAGE_SIZE];
     int frame_index;
+    size_t length;
 
     if (page_id < 0 || buffer == NULL || buffer_size <= 0)
     {
@@ -86,51 +101,43 @@ int buffer_pool_read_text(int page_id, char *buffer, int buffer_size)
     if (frame_index >= 0)
     {
         cache_hits++;
-
         update_access_time(frame_index);
 
-        size_t length = strlen(frames[frame_index].data);
+        printf("Cache HIT for page %d.\n", page_id);
+    }
+    else
+    {
+        cache_misses++;
+        frame_index = select_frame();
+        memset(page_data, 0, PAGE_SIZE);
 
-        if (length >= (size_t)buffer_size)
+        if (!page_manager_read_text(
+                page_id,
+                (char *)page_data,
+                PAGE_SIZE))
         {
-            printf("Error: Output buffer is too small.\n");
+            printf("Could not load page %d into the buffer pool.\n",
+                   page_id);
             return 0;
         }
 
-        memcpy(buffer, frames[frame_index].data, length + 1);
+        memcpy(frames[frame_index].data, page_data, PAGE_SIZE);
 
-        printf("Cache HIT for page %d.\n", page_id);
-        return 1;
+        frames[frame_index].page_id = page_id;
+        frames[frame_index].valid = 1;
+
+        update_access_time(frame_index);
+
+        printf("Cache MISS for page %d. Loaded from disk.\n", page_id);
     }
 
-    cache_misses++;
+    length = 0;
 
-    frame_index = select_frame();
-
-    char page_data[PAGE_SIZE];
-
-    if (!page_manager_read_text(
-            page_id,
-            page_data,
-            sizeof(page_data)))
+    while (length < PAGE_SIZE &&
+           frames[frame_index].data[length] != '\0')
     {
-        printf("Could not load page %d into the buffer pool.\n",
-               page_id);
-        return 0;
+        length++;
     }
-
-    frames[frame_index].page_id = page_id;
-    frames[frame_index].valid = 1;
-
-    memcpy(
-        frames[frame_index].data,
-        page_data,
-        strlen(page_data) + 1
-    );
-
-    update_access_time(frame_index);
-
-    size_t length = strlen(frames[frame_index].data);
 
     if (length >= (size_t)buffer_size)
     {
@@ -138,16 +145,18 @@ int buffer_pool_read_text(int page_id, char *buffer, int buffer_size)
         return 0;
     }
 
-    memcpy(buffer, frames[frame_index].data, length + 1);
-
-    printf("Cache MISS for page %d. Loaded from disk.\n", page_id);
+    memcpy(buffer, frames[frame_index].data, length);
+    buffer[length] = '\0';
 
     return 1;
 }
 
+
+/* Write a text page through the buffer pool */
 int buffer_pool_write_text(int page_id, const char *text)
 {
     int frame_index;
+    size_t length;
 
     if (page_id < 0 || text == NULL)
     {
@@ -155,7 +164,9 @@ int buffer_pool_write_text(int page_id, const char *text)
         return 0;
     }
 
-    if (strlen(text) >= PAGE_SIZE)
+    length = strlen(text);
+
+    if (length >= PAGE_SIZE)
     {
         printf("Error: Text is too large for one page.\n");
         return 0;
@@ -163,10 +174,6 @@ int buffer_pool_write_text(int page_id, const char *text)
 
     frame_index = find_frame(page_id);
 
-    /*
-     * Write through to disk first.
-     * Only update the cache after the disk write succeeds.
-     */
     if (!page_manager_write_text(page_id, text))
     {
         printf("Error: Page write failed.\n");
@@ -187,14 +194,11 @@ int buffer_pool_write_text(int page_id, const char *text)
         printf("Cache HIT for page %d.\n", page_id);
     }
 
+    memset(frames[frame_index].data, 0, PAGE_SIZE);
+    memcpy(frames[frame_index].data, text, length);
+
     frames[frame_index].page_id = page_id;
     frames[frame_index].valid = 1;
-
-    memcpy(
-        frames[frame_index].data,
-        text,
-        strlen(text) + 1
-    );
 
     update_access_time(frame_index);
 
@@ -203,6 +207,112 @@ int buffer_pool_write_text(int page_id, const char *text)
     return 1;
 }
 
+
+/* Read a complete binary page */
+int buffer_pool_read_page(
+    int page_id,
+    unsigned char *buffer,
+    size_t buffer_size
+)
+{
+    int frame_index;
+
+    if (page_id < 0 || buffer == NULL || buffer_size != PAGE_SIZE)
+    {
+        printf("Error: Invalid binary read request.\n");
+        return 0;
+    }
+
+    frame_index = find_frame(page_id);
+
+    if (frame_index >= 0)
+    {
+        cache_hits++;
+        update_access_time(frame_index);
+
+        printf("Cache HIT for binary page %d.\n", page_id);
+    }
+    else
+    {
+        cache_misses++;
+        frame_index = select_frame();
+
+        if (!page_manager_read_page(
+                page_id,
+                frames[frame_index].data,
+                PAGE_SIZE))
+        {
+            printf("Could not load binary page %d.\n", page_id);
+            return 0;
+        }
+
+        frames[frame_index].page_id = page_id;
+        frames[frame_index].valid = 1;
+
+        update_access_time(frame_index);
+
+        printf("Cache MISS for binary page %d. Loaded from disk.\n",
+               page_id);
+    }
+
+    memcpy(buffer, frames[frame_index].data, PAGE_SIZE);
+
+    return 1;
+}
+
+
+/* Write a complete binary page */
+int buffer_pool_write_page(
+    int page_id,
+    const unsigned char *buffer,
+    size_t buffer_size
+)
+{
+    int frame_index;
+
+    if (page_id < 0 || buffer == NULL || buffer_size != PAGE_SIZE)
+    {
+        printf("Error: Invalid binary write request.\n");
+        return 0;
+    }
+
+    frame_index = find_frame(page_id);
+
+    /* Write through to disk before updating the cache */
+    if (!page_manager_write_page(page_id, buffer, PAGE_SIZE))
+    {
+        printf("Error: Binary page write failed.\n");
+        return 0;
+    }
+
+    if (frame_index < 0)
+    {
+        cache_misses++;
+        frame_index = select_frame();
+
+        printf("Cache MISS for binary page %d.\n", page_id);
+    }
+    else
+    {
+        cache_hits++;
+
+        printf("Cache HIT for binary page %d.\n", page_id);
+    }
+
+    memcpy(frames[frame_index].data, buffer, PAGE_SIZE);
+
+    frames[frame_index].page_id = page_id;
+    frames[frame_index].valid = 1;
+
+    update_access_time(frame_index);
+
+    printf("Binary page %d written and cached.\n", page_id);
+
+    return 1;
+}
+
+
+/* Display buffer pool statistics */
 void buffer_pool_show_info(void)
 {
     unsigned long total_accesses = cache_hits + cache_misses;
@@ -249,6 +359,8 @@ void buffer_pool_show_info(void)
     }
 }
 
+
+/* Reset statistics without clearing cached pages */
 void buffer_pool_reset_stats(void)
 {
     cache_hits = 0;

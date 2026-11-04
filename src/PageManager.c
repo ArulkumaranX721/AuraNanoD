@@ -9,6 +9,7 @@
 static char page_file[PAGE_FILE_SIZE];
 static int page_count = 0;
 
+
 int page_manager_initialize(const char *directory)
 {
     FILE *file;
@@ -255,6 +256,160 @@ int page_manager_read_text(int page_id, char *buffer, int buffer_size)
     buffer[text_length] = '\0';
 
     return 1;
+}
+
+/* Write a complete raw binary page to disk */
+int page_manager_write_page(
+    int page_id,
+    const unsigned char *buffer,
+    size_t buffer_size
+)
+{
+    FILE *file;
+    long offset;
+
+    if (page_id < 0 || buffer == NULL || buffer_size != PAGE_SIZE)
+    {
+        printf("Error: Invalid page ID, buffer, or page size.\n");
+        return 0;
+    }
+
+    if (page_file[0] == '\0')
+    {
+        printf("Error: Page storage is not initialized.\n");
+        return 0;
+    }
+
+    if (page_id > INT_MAX / PAGE_SIZE)
+    {
+        printf("Error: Page ID is too large.\n");
+        return 0;
+    }
+
+    if (page_id > page_count)
+    {
+        printf("Error: Pages must be created sequentially.\n");
+        printf("Next available page ID: %d\n", page_count);
+        return 0;
+    }
+
+    offset = (long)page_id * PAGE_SIZE;
+
+    file = fopen(page_file, "r+b");
+
+    if (file == NULL)
+    {
+        file = fopen(page_file, "w+b");
+    }
+
+    if (file == NULL)
+    {
+        printf("Error: Could not open pages.dat.\n");
+        return 0;
+    }
+
+    if (fseek(file, offset, SEEK_SET) != 0)
+    {
+        printf("Error: Could not seek to the requested page.\n");
+        fclose(file);
+        return 0;
+    }
+
+    if (fwrite(buffer, 1, PAGE_SIZE, file) != PAGE_SIZE)
+    {
+        printf("Error: Could not write the complete page.\n");
+        fclose(file);
+        return 0;
+    }
+
+    if (fclose(file) != 0)
+    {
+        printf("Error: Could not close the page file.\n");
+        return 0;
+    }
+
+    if (page_id == page_count)
+    {
+        page_count++;
+    }
+
+    printf("Raw page %d written successfully.\n", page_id);
+
+    return 1;
+}
+
+
+/* Read a complete raw binary page from disk */
+int page_manager_read_page(
+    int page_id,
+    unsigned char *buffer,
+    size_t buffer_size
+)
+{
+    FILE *file;
+    long offset;
+
+    if (page_id < 0 || buffer == NULL || buffer_size != PAGE_SIZE)
+    {
+        printf("Error: Invalid page ID, buffer, or page size.\n");
+        return 0;
+    }
+
+    if (page_file[0] == '\0')
+    {
+        printf("Error: Page storage is not initialized.\n");
+        return 0;
+    }
+
+    if (page_id >= page_count)
+    {
+        printf("Error: Page does not exist.\n");
+        return 0;
+    }
+
+    if (page_id > INT_MAX / PAGE_SIZE)
+    {
+        printf("Error: Page ID is too large.\n");
+        return 0;
+    }
+
+    offset = (long)page_id * PAGE_SIZE;
+
+    file = fopen(page_file, "rb");
+
+    if (file == NULL)
+    {
+        printf("Error: Could not open pages.dat.\n");
+        return 0;
+    }
+
+    if (fseek(file, offset, SEEK_SET) != 0)
+    {
+        printf("Error: Could not seek to the requested page.\n");
+        fclose(file);
+        return 0;
+    }
+
+    if (fread(buffer, 1, PAGE_SIZE, file) != PAGE_SIZE)
+    {
+        printf("Error: Could not read the complete page.\n");
+        fclose(file);
+        return 0;
+    }
+
+    if (fclose(file) != 0)
+    {
+        printf("Error: Could not close the page file.\n");
+        return 0;
+    }
+
+    printf("Raw page %d read successfully.\n", page_id);
+
+    return 1;
+}
+int page_manager_get_page_count(void)
+{
+    return page_count;
 }
 
 void page_manager_show_info(void)
