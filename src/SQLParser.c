@@ -5,6 +5,7 @@
 
 #include "SQLParser.h"
 
+/* Check whether a word is an SQL keyword. */
 static int is_sql_keyword(const char *word)
 {
     const char *keywords[] =
@@ -38,6 +39,7 @@ static int is_sql_keyword(const char *word)
     return 0;
 }
 
+/* Add a token to the token list. */
 static int add_token(
     SQLTokenList *result,
     SQLTokenType type,
@@ -68,6 +70,7 @@ static int add_token(
     return 1;
 }
 
+/* SQL TOKENIZER */
 int sql_tokenize(const char *sql, SQLTokenList *result)
 {
     if (sql == NULL || result == NULL)
@@ -81,6 +84,7 @@ int sql_tokenize(const char *sql, SQLTokenList *result)
 
     while (sql[i] != '\0')
     {
+        /* Ignore whitespace. */
         if (isspace((unsigned char)sql[i]))
         {
             i++;
@@ -88,7 +92,6 @@ int sql_tokenize(const char *sql, SQLTokenList *result)
         }
 
         /* SQL string: 'Arul' */
-
         if (sql[i] == '\'')
         {
             int start = ++i;
@@ -117,8 +120,7 @@ int sql_tokenize(const char *sql, SQLTokenList *result)
             continue;
         }
 
-        /* SQL symbols */
-
+        /* SQL symbols. */
         if (strchr("(),;*=<>", sql[i]) != NULL)
         {
             if (!add_token(
@@ -134,8 +136,7 @@ int sql_tokenize(const char *sql, SQLTokenList *result)
             continue;
         }
 
-        /* Numbers */
-
+        /* Numbers. */
         if (isdigit((unsigned char)sql[i]))
         {
             int start = i;
@@ -157,8 +158,7 @@ int sql_tokenize(const char *sql, SQLTokenList *result)
             continue;
         }
 
-        /* Identifiers and keywords */
-
+        /* Identifiers and keywords. */
         if (isalpha((unsigned char)sql[i]) || sql[i] == '_')
         {
             char word[SQL_MAX_TOKEN_LENGTH];
@@ -204,7 +204,6 @@ int sql_tokenize(const char *sql, SQLTokenList *result)
             }
 
             /* Normalize keywords to uppercase. */
-
             if (type == SQL_TOKEN_KEYWORD)
             {
                 strcpy(
@@ -225,6 +224,7 @@ int sql_tokenize(const char *sql, SQLTokenList *result)
     return 1;
 }
 
+/* DISPLAY TOKENIZER OUTPUT */
 void sql_print_tokens(const SQLTokenList *tokens)
 {
     if (tokens == NULL)
@@ -271,4 +271,134 @@ void sql_print_tokens(const SQLTokenList *tokens)
             type_name,
             tokens->tokens[i].value);
     }
+}
+
+/* CHECK TOKEN VALUE */
+static int is_token(
+    const SQLTokenList *tokens,
+    int position,
+    const char *expected)
+{
+    return position >= 0 &&
+           position < tokens->count &&
+           strcmp(
+               tokens->tokens[position].value,
+               expected) == 0;
+}
+
+/* SQL PARSER */
+int sql_parse(
+    const SQLTokenList *tokens,
+    SQLStatement *statement)
+{
+    if (tokens == NULL || statement == NULL)
+    {
+        return 0;
+    }
+
+    memset(statement, 0, sizeof(SQLStatement));
+
+    /* CREATE TABLE employees; */
+    if (is_token(tokens, 0, "CREATE"))
+    {
+        if (!is_token(tokens, 1, "TABLE") ||
+            tokens->count < 3 ||
+            tokens->tokens[2].type != SQL_TOKEN_IDENTIFIER)
+        {
+            printf("SQL Parser Error: Invalid CREATE TABLE syntax.\n");
+            return 0;
+        }
+
+        if (tokens->count > 4 ||
+            (tokens->count == 4 && !is_token(tokens, 3, ";")))
+        {
+            printf("SQL Parser Error: Unexpected CREATE TABLE tokens.\n");
+            return 0;
+        }
+
+        statement->type = SQL_COMMAND_CREATE_TABLE;
+
+        strcpy(
+            statement->table_name,
+            tokens->tokens[2].value);
+
+        return 1;
+    }
+
+    /* INSERT INTO employees VALUES ('arul001', 'Arul'); */
+    if (is_token(tokens, 0, "INSERT"))
+    {
+        if (!is_token(tokens, 1, "INTO") ||
+            tokens->count < 8 ||
+            tokens->tokens[2].type != SQL_TOKEN_IDENTIFIER ||
+            !is_token(tokens, 3, "VALUES") ||
+            !is_token(tokens, 4, "(") ||
+            tokens->tokens[5].type != SQL_TOKEN_STRING ||
+            !is_token(tokens, 6, ",") ||
+            tokens->tokens[7].type != SQL_TOKEN_STRING)
+        {
+            printf("SQL Parser Error: Invalid INSERT syntax.\n");
+            return 0;
+        }
+
+        int end = 8;
+
+        if (!is_token(tokens, end, ")"))
+        {
+            printf("SQL Parser Error: Expected closing parenthesis.\n");
+            return 0;
+        }
+
+        end++;
+
+        if (end < tokens->count && is_token(tokens, end, ";"))
+        {
+            end++;
+        }
+
+        if (end != tokens->count)
+        {
+            printf("SQL Parser Error: Unexpected INSERT tokens.\n");
+            return 0;
+        }
+
+        statement->type = SQL_COMMAND_INSERT;
+
+        strcpy(statement->table_name, tokens->tokens[2].value);
+        strcpy(statement->key, tokens->tokens[5].value);
+        strcpy(statement->value, tokens->tokens[7].value);
+
+        return 1;
+    }
+
+    /* SELECT * FROM employees; */
+    if (is_token(tokens, 0, "SELECT"))
+    {
+        if (!is_token(tokens, 1, "*") ||
+            !is_token(tokens, 2, "FROM") ||
+            tokens->count < 4 ||
+            tokens->tokens[3].type != SQL_TOKEN_IDENTIFIER)
+        {
+            printf("SQL Parser Error: Invalid SELECT syntax.\n");
+            return 0;
+        }
+
+        if (tokens->count > 5 ||
+            (tokens->count == 5 && !is_token(tokens, 4, ";")))
+        {
+            printf("SQL Parser Error: Unexpected SELECT tokens.\n");
+            return 0;
+        }
+
+        statement->type = SQL_COMMAND_SELECT;
+
+        strcpy(
+            statement->table_name,
+            tokens->tokens[3].value);
+
+        return 1;
+    }
+
+    printf("SQL Parser Error: Unsupported SQL command.\n");
+    return 0;
 }

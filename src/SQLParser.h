@@ -29,4 +29,25 @@ int sql_tokenize(const char *sql, SQLTokenList *result);
 
 void sql_print_tokens(const SQLTokenList *tokens);
 
+
+typedef enum
+{
+    SQL_COMMAND_UNKNOWN,
+    SQL_COMMAND_CREATE_TABLE,
+    SQL_COMMAND_INSERT,
+    SQL_COMMAND_SELECT
+} SQLCommandType;
+
+typedef struct
+{
+    SQLCommandType type;
+    char table_name[SQL_MAX_TOKEN_LENGTH];
+    char key[SQL_MAX_TOKEN_LENGTH];
+    char value[SQL_MAX_TOKEN_LENGTH];
+} SQLStatement;
+
+int sql_parse(const SQLTokenList *tokens, SQLStatement *statement);
+
+
 #endif
+
