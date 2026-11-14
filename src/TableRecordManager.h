@@ -55,6 +55,9 @@ int table_record_manager_select(
     const char *condition_operator,
     int has_second_condition,
     const char *second_key,
-    const char *second_operator
+    const char *second_operator,
+    int has_or_condition,
+     const char *or_key,
+const char *or_operator
 );
 #endif

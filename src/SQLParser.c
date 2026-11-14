@@ -514,6 +514,8 @@ if (is_token(tokens, 0, "SELECT"))
     statement->has_where = 0;
     statement->select_key = 0;
     statement->select_value = 0;
+    statement->has_second_condition = 0;
+statement->has_or_condition = 0;
 
     /* SELECT * */
     if (is_token(tokens, pos, "*"))
@@ -624,8 +626,12 @@ if (is_token(tokens, pos, "WHERE"))
     pos += 4;
 
     /* Optional AND condition */
-if (is_token(tokens, pos, "AND"))
+/* Optional AND / OR condition */
+if (is_token(tokens, pos, "AND") ||
+    is_token(tokens, pos, "OR"))
 {
+    int is_or = is_token(tokens, pos, "OR");
+
     pos++;
 
     if (pos + 2 >= tokens->count ||
@@ -641,21 +647,22 @@ if (is_token(tokens, pos, "AND"))
         !is_token(tokens, pos + 1, ">") &&
         !is_token(tokens, pos + 1, "<"))
     {
-        printf("SQL Parser Error: Invalid second WHERE operator.\n");
+        printf("SQL Parser Error: Invalid WHERE operator.\n");
         return 0;
     }
 
-    strcpy(
-        statement->second_operator,
-        tokens->tokens[pos + 1].value
-    );
-
-    strcpy(
-        statement->second_key,
-        tokens->tokens[pos + 2].value
-    );
-
-    statement->has_second_condition = 1;
+    if (is_or)
+    {
+        strcpy(statement->or_operator, tokens->tokens[pos + 1].value);
+        strcpy(statement->or_key, tokens->tokens[pos + 2].value);
+        statement->has_or_condition = 1;
+    }
+    else
+    {
+        strcpy(statement->second_operator, tokens->tokens[pos + 1].value);
+        strcpy(statement->second_key, tokens->tokens[pos + 2].value);
+        statement->has_second_condition = 1;
+    }
 
     pos += 3;
 }

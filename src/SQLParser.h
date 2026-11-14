@@ -62,6 +62,9 @@ typedef struct
 
 char second_key[SQL_MAX_TOKEN_LENGTH];
 char second_operator[3];
+int has_or_condition;
+char or_key[SQL_MAX_TOKEN_LENGTH];
+char or_operator[3];
 
 } SQLStatement;
 

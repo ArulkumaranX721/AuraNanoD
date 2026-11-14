@@ -118,8 +118,8 @@ void execute_sql_command(const char *sql)
 
             break;
 
-       case SQL_COMMAND_SELECT:
 
+    case SQL_COMMAND_SELECT:
     table_record_manager_select(
         statement.table_name,
         statement.select_key,
@@ -129,9 +129,11 @@ void execute_sql_command(const char *sql)
         statement.condition_operator,
         statement.has_second_condition,
         statement.second_key,
-        statement.second_operator
+        statement.second_operator,
+        statement.has_or_condition,
+        statement.or_key,
+        statement.or_operator
     );
-
     break;
 
    case SQL_COMMAND_UPDATE:

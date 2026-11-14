@@ -395,7 +395,11 @@ int table_record_manager_select(
     const char *condition_operator,
     int has_second_condition,
     const char *second_key,
-    const char *second_operator)
+    const char *second_operator,
+    int has_or_condition,
+    const char *or_key,
+    const char *or_operator
+)
 {
     if (table_name == NULL ||
         (!show_key && !show_value) ||
@@ -513,6 +517,43 @@ int table_record_manager_select(
                 return 0;
             }
         }
+
+        /* Third condition - OR */
+if (has_or_condition)
+{
+    int comparison = 0;
+    char *end1;
+    char *end2;
+
+    long n1 = strtol(record->key, &end1, 10);
+    long n2 = strtol(or_key, &end2, 10);
+
+    if (*record->key != '\0' &&
+        *or_key != '\0' &&
+        *end1 == '\0' &&
+        *end2 == '\0')
+    {
+        if (n1 > n2) comparison = 1;
+        else if (n1 < n2) comparison = -1;
+    }
+    else
+    {
+        comparison = strcmp(record->key, or_key);
+    }
+
+    int or_match = 0;
+
+    if (strcmp(or_operator, "=") == 0)
+        or_match = (comparison == 0);
+    else if (strcmp(or_operator, "!=") == 0)
+        or_match = (comparison != 0);
+    else if (strcmp(or_operator, ">") == 0)
+        or_match = (comparison > 0);
+    else if (strcmp(or_operator, "<") == 0)
+        or_match = (comparison < 0);
+
+    matches = matches || or_match;
+}
 
         if (!matches)
             continue;
