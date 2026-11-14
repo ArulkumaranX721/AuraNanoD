@@ -120,30 +120,13 @@ void execute_sql_command(const char *sql)
 
        case SQL_COMMAND_SELECT:
 
-    if (statement.has_where)
-    {
-        TRM_Record result;
-
-        if (table_record_manager_find(
-                statement.table_name,
-                statement.key,
-                &result))
-        {
-            printf("\nMatching Record\n");
-            printf("------------------------------\n");
-            printf("Table ID : %d\n", result.table_id);
-            printf("Key      : %s\n", result.key);
-            printf("Value    : %s\n", result.value);
-        }
-        else
-        {
-            printf("No matching record found.\n");
-        }
-    }
-    else
-    {
-        table_record_manager_list(statement.table_name);
-    }
+    table_record_manager_select(
+        statement.table_name,
+        statement.select_key,
+        statement.select_value,
+        statement.has_where,
+        statement.key
+    );
 
     break;
 

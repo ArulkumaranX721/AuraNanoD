@@ -55,6 +55,8 @@ typedef struct
     char key[SQL_MAX_TOKEN_LENGTH];
     char value[SQL_MAX_TOKEN_LENGTH];
     int has_where;
+      int select_key;
+    int select_value;
 
 } SQLStatement;
 

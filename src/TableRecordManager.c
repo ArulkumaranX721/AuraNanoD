@@ -384,3 +384,94 @@ int table_record_manager_list(const char *table_name)
 
     return found;
 }
+
+
+/* SELECT specific columns from a table. */
+int table_record_manager_select(
+    const char *table_name,
+    int show_key,
+    int show_value,
+    int has_where,
+    const char *key)
+{
+    if (table_name == NULL ||
+        (!show_key && !show_value) ||
+        (has_where && key == NULL))
+    {
+        printf("TRM Error: Invalid SELECT arguments.\n");
+        return 0;
+    }
+
+    int table_id;
+
+    if (!get_table_id(table_name, &table_id))
+    {
+        printf("TRM Error: Table not found: %s\n", table_name);
+        return 0;
+    }
+
+    int found = 0;
+
+    printf("\nTable: %s\n", table_name);
+    printf("----------------------------------------\n");
+
+    if (show_key && show_value)
+    {
+        printf("%-20s | %-30s\n", "ID", "VALUE");
+    }
+    else if (show_key)
+    {
+        printf("%-20s\n", "ID");
+    }
+    else
+    {
+        printf("%-30s\n", "VALUE");
+    }
+
+    printf("----------------------------------------\n");
+
+    for (int i = 0; i < database.record_count; i++)
+    {
+        TRM_Record *record = &database.records[i];
+
+        if (record->table_id != table_id)
+        {
+            continue;
+        }
+
+        if (has_where && strcmp(record->key, key) != 0)
+        {
+            continue;
+        }
+
+        if (show_key && show_value)
+        {
+            printf("%-20s | %-30s\n",
+                   record->key,
+                   record->value);
+        }
+        else if (show_key)
+        {
+            printf("%-20s\n", record->key);
+        }
+        else
+        {
+            printf("%-30s\n", record->value);
+        }
+
+        found++;
+    }
+
+    printf("----------------------------------------\n");
+
+    if (has_where && found == 0)
+    {
+        printf("No matching record found.\n");
+    }
+    else
+    {
+        printf("Total records: %d\n", found);
+    }
+
+    return 1;
+}

@@ -476,71 +476,141 @@ int sql_parse(
     }
 
     /* SELECT * FROM employees; */
-    
-/* SELECT * FROM employees; */
-/* SELECT * FROM employees WHERE id = '101'; */
+   
+/*
+    Supported SELECT statements:
+
+    SELECT * FROM employees;
+    SELECT id FROM employees;
+    SELECT value FROM employees;
+    SELECT id, value FROM employees;
+    SELECT id, value FROM employees WHERE id = '101';
+*/
 
 if (is_token(tokens, 0, "SELECT"))
 {
-    if (tokens->count < 4 ||
-        !is_token(tokens, 1, "*") ||
-        !is_token(tokens, 2, "FROM") ||
-        tokens->tokens[3].type != SQL_TOKEN_IDENTIFIER)
-    {
-        printf("SQL Parser Error: Invalid SELECT syntax.\n");
-        return 0;
-    }
+    int pos = 1;
 
     statement->type = SQL_COMMAND_SELECT;
+    statement->has_where = 0;
+    statement->select_key = 0;
+    statement->select_value = 0;
+
+    /* SELECT * */
+    if (is_token(tokens, pos, "*"))
+    {
+        statement->select_key = 1;
+        statement->select_value = 1;
+        pos++;
+    }
+    else
+    {
+        /* First selected column */
+        if (is_token(tokens, pos, "ID"))
+        {
+            statement->select_key = 1;
+        }
+        else if (is_token(tokens, pos, "VALUE"))
+        {
+            statement->select_value = 1;
+        }
+        else
+        {
+            printf("SQL Parser Error: Invalid SELECT column.\n");
+            return 0;
+        }
+
+        pos++;
+
+        /* Optional second column */
+        if (is_token(tokens, pos, ","))
+        {
+            pos++;
+
+            if (is_token(tokens, pos, "ID"))
+            {
+                if (statement->select_key)
+                {
+                    printf("SQL Parser Error: Duplicate column.\n");
+                    return 0;
+                }
+
+                statement->select_key = 1;
+            }
+            else if (is_token(tokens, pos, "VALUE"))
+            {
+                if (statement->select_value)
+                {
+                    printf("SQL Parser Error: Duplicate column.\n");
+                    return 0;
+                }
+
+                statement->select_value = 1;
+            }
+            else
+            {
+                printf("SQL Parser Error: Invalid SELECT column.\n");
+                return 0;
+            }
+
+            pos++;
+        }
+    }
+
+    /* FROM table */
+    if (!is_token(tokens, pos, "FROM") ||
+        pos + 1 >= tokens->count ||
+        tokens->tokens[pos + 1].type != SQL_TOKEN_IDENTIFIER)
+    {
+        printf("SQL Parser Error: Invalid SELECT FROM syntax.\n");
+        return 0;
+    }
 
     strcpy(
         statement->table_name,
-        tokens->tokens[3].value
+        tokens->tokens[pos + 1].value
     );
 
-    statement->has_where = 0;
+    pos += 2;
 
-    /* SELECT without WHERE */
-    if (tokens->count == 4 ||
-        (tokens->count == 5 && is_token(tokens, 4, ";")))
+    /* Optional WHERE condition */
+    if (is_token(tokens, pos, "WHERE"))
     {
-        return 1;
+        if (pos + 3 >= tokens->count ||
+            !is_token(tokens, pos + 1, "ID") ||
+            !is_token(tokens, pos + 2, "=") ||
+            tokens->tokens[pos + 3].type != SQL_TOKEN_STRING)
+        {
+            printf("SQL Parser Error: Invalid SELECT WHERE syntax.\n");
+            return 0;
+        }
+
+        strcpy(
+            statement->key,
+            tokens->tokens[pos + 3].value
+        );
+
+        statement->has_where = 1;
+
+        pos += 4;
     }
 
-    /* SELECT with WHERE */
-    if (tokens->count < 7 ||
-        !is_token(tokens, 4, "WHERE") ||
-        !is_token(tokens, 5, "ID") ||
-        !is_token(tokens, 6, "=") ||
-        tokens->tokens[7].type != SQL_TOKEN_STRING)
+    /* Optional semicolon */
+    if (pos < tokens->count && is_token(tokens, pos, ";"))
     {
-        printf("SQL Parser Error: Invalid SELECT WHERE syntax.\n");
-        return 0;
+        pos++;
     }
 
-    int end = 8;
-
-    if (end < tokens->count && is_token(tokens, end, ";"))
-    {
-        end++;
-    }
-
-    if (end != tokens->count)
+    if (pos != tokens->count)
     {
         printf("SQL Parser Error: Unexpected SELECT tokens.\n");
         return 0;
     }
 
-    statement->has_where = 1;
-
-    strcpy(
-        statement->key,
-        tokens->tokens[7].value
-    );
-
     return 1;
 }
 
+      
 
     printf("SQL Parser Error: Unsupported SQL command.\n");
     return 0;
