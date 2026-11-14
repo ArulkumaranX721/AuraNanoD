@@ -4,6 +4,15 @@
 
 #define SQL_MAX_TOKENS 64
 #define SQL_MAX_TOKEN_LENGTH 128
+#define SQL_MAX_CONDITIONS 10
+
+typedef struct
+{
+    char column[SQL_MAX_TOKEN_LENGTH];
+    char comparison[3];
+    char value[SQL_MAX_TOKEN_LENGTH];
+
+} SQLCondition;
 
 /* SQL token types */
 typedef enum
@@ -50,7 +59,11 @@ typedef enum
 typedef struct
 {
     SQLCommandType type;
+    int condition_count;
 
+SQLCondition conditions[SQL_MAX_CONDITIONS];
+
+char logical_operators[SQL_MAX_CONDITIONS - 1][4];
     char table_name[SQL_MAX_TOKEN_LENGTH];
     char key[SQL_MAX_TOKEN_LENGTH];
     char value[SQL_MAX_TOKEN_LENGTH];
@@ -66,7 +79,10 @@ int has_or_condition;
 char or_key[SQL_MAX_TOKEN_LENGTH];
 char or_operator[3];
 
+
+
 } SQLStatement;
+
 
 
 /* SQL parser */
@@ -74,6 +90,9 @@ int sql_parse(
     const SQLTokenList *tokens,
     SQLStatement *statement
 );
+
+
+
 
 #endif
  

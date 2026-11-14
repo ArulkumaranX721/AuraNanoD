@@ -3,7 +3,10 @@
 #include <string.h>
 #include <stdint.h>
 #include<stdlib.h>
-
+#include <stdlib.h>
+#include <string.h>
+#include <stdio.h>
+#include "SQLParser.h"
 #include "TableRecordManager.h"
 
 #define TRM_FILE "./data/table_records.dat"
@@ -189,6 +192,48 @@ int table_record_manager_insert(
     printf("Key        : %s\n", key);
 
     return 1;
+}
+/* Compare record ID with a condition value. */
+static int evaluate_condition(
+    const char *record_key,
+    const SQLCondition *condition)
+{
+    int comparison = 0;
+
+    char *end1;
+    char *end2;
+
+    long n1 = strtol(record_key, &end1, 10);
+    long n2 = strtol(condition->value, &end2, 10);
+
+    if (*record_key != '\0' &&
+        *condition->value != '\0' &&
+        *end1 == '\0' &&
+        *end2 == '\0')
+    {
+        if (n1 > n2)
+            comparison = 1;
+        else if (n1 < n2)
+            comparison = -1;
+    }
+    else
+    {
+        comparison = strcmp(record_key, condition->value);
+    }
+
+    if (strcmp(condition->comparison, "=") == 0)
+        return comparison == 0;
+
+    if (strcmp(condition->comparison, "!=") == 0)
+        return comparison != 0;
+
+    if (strcmp(condition->comparison, ">") == 0)
+        return comparison > 0;
+
+    if (strcmp(condition->comparison, "<") == 0)
+        return comparison < 0;
+
+    return 0;
 }
 
 /* Find a record inside a specific table. */
@@ -390,22 +435,16 @@ int table_record_manager_select(
     const char *table_name,
     int show_key,
     int show_value,
-    int has_where,
-    const char *key,
-    const char *condition_operator,
-    int has_second_condition,
-    const char *second_key,
-    const char *second_operator,
-    int has_or_condition,
-    const char *or_key,
-    const char *or_operator
-)
+    int condition_count,
+    SQLCondition conditions[],
+    char logical_operators[][4])
 {
     if (table_name == NULL ||
         (!show_key && !show_value) ||
-        (has_where && (key == NULL || condition_operator == NULL)) ||
-        (has_second_condition &&
-         (!has_where || second_key == NULL || second_operator == NULL)))
+        condition_count < 0 ||
+        condition_count > SQL_MAX_CONDITIONS ||
+        (condition_count > 0 && conditions == NULL) ||
+        (condition_count > 1 && logical_operators == NULL))
     {
         printf("TRM Error: Invalid SELECT arguments.\n");
         return 0;
@@ -417,6 +456,17 @@ int table_record_manager_select(
     {
         printf("TRM Error: Table not found: %s\n", table_name);
         return 0;
+    }
+
+    /* Validate logical operators */
+    for (int i = 0; i < condition_count - 1; i++)
+    {
+        if (strcmp(logical_operators[i], "AND") != 0 &&
+            strcmp(logical_operators[i], "OR") != 0)
+        {
+            printf("TRM Error: Invalid logical operator.\n");
+            return 0;
+        }
     }
 
     int found = 0;
@@ -442,124 +492,39 @@ int table_record_manager_select(
 
         int matches = 1;
 
-        /* First WHERE condition */
-        if (has_where)
+        if (condition_count > 0)
         {
-            int comparison = 0;
-            char *end1;
-            char *end2;
+            /* AND groups are evaluated before OR. */
+            int group_match =
+                evaluate_condition(record->key, &conditions[0]);
 
-            long n1 = strtol(record->key, &end1, 10);
-            long n2 = strtol(key, &end2, 10);
+            int overall_match = 0;
 
-            if (*record->key != '\0' &&
-                *key != '\0' &&
-                *end1 == '\0' &&
-                *end2 == '\0')
+            for (int j = 0; j < condition_count - 1; j++)
             {
-                if (n1 > n2) comparison = 1;
-                else if (n1 < n2) comparison = -1;
-            }
-            else
-            {
-                comparison = strcmp(record->key, key);
+                int next_match =
+                    evaluate_condition(record->key, &conditions[j + 1]);
+
+                if (strcmp(logical_operators[j], "AND") == 0)
+                {
+                    group_match = group_match && next_match;
+                }
+                else
+                {
+                    overall_match = overall_match || group_match;
+                    group_match = next_match;
+                }
             }
 
-            if (strcmp(condition_operator, "=") == 0)
-                matches = (comparison == 0);
-            else if (strcmp(condition_operator, "!=") == 0)
-                matches = (comparison != 0);
-            else if (strcmp(condition_operator, ">") == 0)
-                matches = (comparison > 0);
-            else if (strcmp(condition_operator, "<") == 0)
-                matches = (comparison < 0);
-            else
-            {
-                printf("TRM Error: Unsupported operator.\n");
-                return 0;
-            }
+            matches = overall_match || group_match;
         }
-
-        /* Second WHERE condition - AND */
-        if (matches && has_second_condition)
-        {
-            int comparison = 0;
-            char *end1;
-            char *end2;
-
-            long n1 = strtol(record->key, &end1, 10);
-            long n2 = strtol(second_key, &end2, 10);
-
-            if (*record->key != '\0' &&
-                *second_key != '\0' &&
-                *end1 == '\0' &&
-                *end2 == '\0')
-            {
-                if (n1 > n2) comparison = 1;
-                else if (n1 < n2) comparison = -1;
-            }
-            else
-            {
-                comparison = strcmp(record->key, second_key);
-            }
-
-            if (strcmp(second_operator, "=") == 0)
-                matches = (comparison == 0);
-            else if (strcmp(second_operator, "!=") == 0)
-                matches = (comparison != 0);
-            else if (strcmp(second_operator, ">") == 0)
-                matches = (comparison > 0);
-            else if (strcmp(second_operator, "<") == 0)
-                matches = (comparison < 0);
-            else
-            {
-                printf("TRM Error: Unsupported second operator.\n");
-                return 0;
-            }
-        }
-
-        /* Third condition - OR */
-if (has_or_condition)
-{
-    int comparison = 0;
-    char *end1;
-    char *end2;
-
-    long n1 = strtol(record->key, &end1, 10);
-    long n2 = strtol(or_key, &end2, 10);
-
-    if (*record->key != '\0' &&
-        *or_key != '\0' &&
-        *end1 == '\0' &&
-        *end2 == '\0')
-    {
-        if (n1 > n2) comparison = 1;
-        else if (n1 < n2) comparison = -1;
-    }
-    else
-    {
-        comparison = strcmp(record->key, or_key);
-    }
-
-    int or_match = 0;
-
-    if (strcmp(or_operator, "=") == 0)
-        or_match = (comparison == 0);
-    else if (strcmp(or_operator, "!=") == 0)
-        or_match = (comparison != 0);
-    else if (strcmp(or_operator, ">") == 0)
-        or_match = (comparison > 0);
-    else if (strcmp(or_operator, "<") == 0)
-        or_match = (comparison < 0);
-
-    matches = matches || or_match;
-}
 
         if (!matches)
             continue;
 
         if (show_key && show_value)
-            printf("%-20s | %-30s\n", record->key, record->value);
+            printf("%-20s | %-30s\n",
+                   record->key, record->value);
         else if (show_key)
             printf("%-20s\n", record->key);
         else
@@ -569,11 +534,7 @@ if (has_or_condition)
     }
 
     printf("----------------------------------------\n");
-
-    if (has_where && found == 0)
-        printf("No matching record found.\n");
-    else
-        printf("Total records: %d\n", found);
+    printf("Total records: %d\n", found);
 
     return 1;
 }

@@ -120,20 +120,16 @@ void execute_sql_command(const char *sql)
 
 
     case SQL_COMMAND_SELECT:
+
     table_record_manager_select(
         statement.table_name,
         statement.select_key,
         statement.select_value,
-        statement.has_where,
-        statement.key,
-        statement.condition_operator,
-        statement.has_second_condition,
-        statement.second_key,
-        statement.second_operator,
-        statement.has_or_condition,
-        statement.or_key,
-        statement.or_operator
+        statement.condition_count,
+        statement.conditions,
+        statement.logical_operators
     );
+
     break;
 
    case SQL_COMMAND_UPDATE:

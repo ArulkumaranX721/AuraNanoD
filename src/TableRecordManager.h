@@ -3,6 +3,7 @@
 #define TABLERECORDMANAGER_H
 
 #include "RecordManager.h"
+#include "SQLParser.h"
 #include "TableManager.h"
 
 #define TRM_RECORDS_PER_PAGE 12
@@ -50,14 +51,9 @@ int table_record_manager_select(
     const char *table_name,
     int show_key,
     int show_value,
-    int has_where,
-    const char *key,
-    const char *condition_operator,
-    int has_second_condition,
-    const char *second_key,
-    const char *second_operator,
-    int has_or_condition,
-     const char *or_key,
-const char *or_operator
+    int condition_count,
+    SQLCondition conditions[],
+    char logical_operators[][4]
 );
+
 #endif

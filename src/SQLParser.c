@@ -594,38 +594,123 @@ statement->has_or_condition = 0;
 
     pos += 2;
 
-    /* Optional WHERE condition */
+printf("\nDEBUG: WHERE token position = %d\n", pos);
+
+for (int i = pos; i < tokens->count; i++)
+{
+    printf("Token %d: [%s] Type: %d\n",
+           i,
+           tokens->tokens[i].value,
+           tokens->tokens[i].type);
+}
+   /* WHERE conditions - supports up to 10 conditions */
+statement->condition_count = 0;
+statement->has_where = 0;
+statement->has_second_condition = 0;
+statement->has_or_condition = 0;
+
+
 if (is_token(tokens, pos, "WHERE"))
 {
-    /* First condition */
-    if (pos + 3 >= tokens->count ||
-        !is_token(tokens, pos + 1, "ID") ||
-        tokens->tokens[pos + 3].type != SQL_TOKEN_STRING)
-    {
-        printf("SQL Parser Error: Invalid WHERE condition.\n");
-        return 0;
-    }
-
-    if (!is_token(tokens, pos + 2, "=") &&
-        !is_token(tokens, pos + 2, "!=") &&
-        !is_token(tokens, pos + 2, ">") &&
-        !is_token(tokens, pos + 2, "<"))
-    {
-        printf("SQL Parser Error: Invalid WHERE operator.\n");
-        return 0;
-    }
-
-    strcpy(statement->key, tokens->tokens[pos + 3].value);
-
-    strcpy(statement->condition_operator,
-           tokens->tokens[pos + 2].value);
-
+    pos++;
     statement->has_where = 1;
-    statement->has_second_condition = 0;
 
-    pos += 4;
+    while (1)
+    {
+        int index = statement->condition_count;
 
-    /* Optional AND condition */
+        if (index >= SQL_MAX_CONDITIONS)
+        {
+            printf("SQL Parser Error: Maximum 10 conditions allowed.\n");
+            return 0;
+        }
+
+        if (pos >= tokens->count ||
+    tokens->tokens[pos].type != SQL_TOKEN_IDENTIFIER ||
+    !is_token(tokens, pos, "ID"))
+{
+    printf("SQL Parser Error: Invalid WHERE column.\n");
+    return 0;
+}
+
+        strcpy(
+            statement->conditions[index].column,
+            tokens->tokens[pos].value
+        );
+
+        pos++;
+
+        /* Validate comparison operator */
+        if (!is_token(tokens, pos, "=") &&
+            !is_token(tokens, pos, "!=") &&
+            !is_token(tokens, pos, ">") &&
+            !is_token(tokens, pos, "<"))
+        {
+            printf("SQL Parser Error: Invalid comparison operator.\n");
+            return 0;
+        }
+
+        strcpy(
+            statement->conditions[index].comparison,
+            tokens->tokens[pos].value
+        );
+
+        pos++;
+
+        /* Validate condition value */
+        if (pos >= tokens->count ||
+            tokens->tokens[pos].type != SQL_TOKEN_STRING)
+        {
+            printf("SQL Parser Error: Invalid WHERE value.\n");
+            return 0;
+        }
+
+        strcpy(
+            statement->conditions[index].value,
+            tokens->tokens[pos].value
+        );
+
+        pos++;
+
+        statement->condition_count++;
+
+        /* Preserve first condition for existing code temporarily */
+        if (index == 0)
+        {
+            strcpy(statement->key,
+                   statement->conditions[index].value);
+
+            strcpy(statement->condition_operator,
+                   statement->conditions[index].comparison);
+        }
+
+        /* Check next logical operator */
+        if (is_token(tokens, pos, "AND") ||
+            is_token(tokens, pos, "OR"))
+        {
+            if (statement->condition_count >= SQL_MAX_CONDITIONS)
+            {
+                printf("SQL Parser Error: Maximum 10 conditions allowed.\n");
+                return 0;
+            }
+
+            int logical_index = statement->condition_count - 1;
+
+          strcpy(
+    statement->logical_operators[logical_index],
+    tokens->tokens[pos].value
+);
+
+            pos++;
+            continue;
+        }
+
+        break;
+    }
+}
+
+
+
 /* Optional AND / OR condition */
 if (is_token(tokens, pos, "AND") ||
     is_token(tokens, pos, "OR"))
@@ -685,11 +770,9 @@ else
 
     return 1;
 }
-}
+
 
       
-
     printf("SQL Parser Error: Unsupported SQL command.\n");
     return 0;
 }
-
