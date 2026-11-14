@@ -16,7 +16,7 @@ int main(void)
         return 1;
     }
 
-    /* Initialize table-aware record storage. */
+    /* Initialize ntable-aware record storage. */
     if (!table_record_manager_initialize())
     {
         printf("Table Record Manager initialization failed.\n");

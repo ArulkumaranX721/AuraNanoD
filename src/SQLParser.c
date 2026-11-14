@@ -73,6 +73,7 @@ static int add_token(
 /* SQL TOKENIZER */
 int sql_tokenize(const char *sql, SQLTokenList *result)
 {
+
     if (sql == NULL || result == NULL)
     {
         return 0;
@@ -120,21 +121,39 @@ int sql_tokenize(const char *sql, SQLTokenList *result)
             continue;
         }
 
-        /* SQL symbols. */
-        if (strchr("(),;*=<>", sql[i]) != NULL)
-        {
-            if (!add_token(
-                    result,
-                    SQL_TOKEN_SYMBOL,
-                    &sql[i],
-                    1))
-            {
-                return 0;
-            }
+     /* SQL symbols. */
 
-            i++;
-            continue;
+/* SQL symbols */
+
+/* Handle two-character operator: != */
+if (sql[i] == '!')
+{
+    if (sql[i + 1] == '=')
+    {
+        if (!add_token(result, SQL_TOKEN_SYMBOL, &sql[i], 2))
+        {
+            return 0;
         }
+
+        i += 2;
+        continue;
+    }
+
+    printf("SQL Tokenizer Error: Invalid operator '!'.\n");
+    return 0;
+}
+
+/* Handle single-character symbols */
+if (strchr("(),;*=<>", sql[i]) != NULL)
+{
+    if (!add_token(result, SQL_TOKEN_SYMBOL, &sql[i], 1))
+    {
+        return 0;
+    }
+
+    i++;
+    continue;
+}
 
         /* Numbers. */
         if (isdigit((unsigned char)sql[i]))
@@ -574,26 +593,76 @@ if (is_token(tokens, 0, "SELECT"))
     pos += 2;
 
     /* Optional WHERE condition */
-    if (is_token(tokens, pos, "WHERE"))
+if (is_token(tokens, pos, "WHERE"))
+{
+    /* First condition */
+    if (pos + 3 >= tokens->count ||
+        !is_token(tokens, pos + 1, "ID") ||
+        tokens->tokens[pos + 3].type != SQL_TOKEN_STRING)
     {
-        if (pos + 3 >= tokens->count ||
-            !is_token(tokens, pos + 1, "ID") ||
-            !is_token(tokens, pos + 2, "=") ||
-            tokens->tokens[pos + 3].type != SQL_TOKEN_STRING)
-        {
-            printf("SQL Parser Error: Invalid SELECT WHERE syntax.\n");
-            return 0;
-        }
-
-        strcpy(
-            statement->key,
-            tokens->tokens[pos + 3].value
-        );
-
-        statement->has_where = 1;
-
-        pos += 4;
+        printf("SQL Parser Error: Invalid WHERE condition.\n");
+        return 0;
     }
+
+    if (!is_token(tokens, pos + 2, "=") &&
+        !is_token(tokens, pos + 2, "!=") &&
+        !is_token(tokens, pos + 2, ">") &&
+        !is_token(tokens, pos + 2, "<"))
+    {
+        printf("SQL Parser Error: Invalid WHERE operator.\n");
+        return 0;
+    }
+
+    strcpy(statement->key, tokens->tokens[pos + 3].value);
+
+    strcpy(statement->condition_operator,
+           tokens->tokens[pos + 2].value);
+
+    statement->has_where = 1;
+    statement->has_second_condition = 0;
+
+    pos += 4;
+
+    /* Optional AND condition */
+if (is_token(tokens, pos, "AND"))
+{
+    pos++;
+
+    if (pos + 2 >= tokens->count ||
+        !is_token(tokens, pos, "ID") ||
+        tokens->tokens[pos + 2].type != SQL_TOKEN_STRING)
+    {
+        printf("SQL Parser Error: Invalid second WHERE condition.\n");
+        return 0;
+    }
+
+    if (!is_token(tokens, pos + 1, "=") &&
+        !is_token(tokens, pos + 1, "!=") &&
+        !is_token(tokens, pos + 1, ">") &&
+        !is_token(tokens, pos + 1, "<"))
+    {
+        printf("SQL Parser Error: Invalid second WHERE operator.\n");
+        return 0;
+    }
+
+    strcpy(
+        statement->second_operator,
+        tokens->tokens[pos + 1].value
+    );
+
+    strcpy(
+        statement->second_key,
+        tokens->tokens[pos + 2].value
+    );
+
+    statement->has_second_condition = 1;
+
+    pos += 3;
+}
+else
+{
+    statement->has_second_condition = 0;
+}
 
     /* Optional semicolon */
     if (pos < tokens->count && is_token(tokens, pos, ";"))
@@ -609,9 +678,11 @@ if (is_token(tokens, 0, "SELECT"))
 
     return 1;
 }
+}
 
       
 
     printf("SQL Parser Error: Unsupported SQL command.\n");
     return 0;
 }
+

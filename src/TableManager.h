@@ -28,13 +28,7 @@ int table_manager_find(
 /* Display all tables */
 void table_manager_list(void);
 
-int table_record_manager_select(
-    const char *table_name,
-    int show_key,
-    int show_value,
-    int has_where,
-    const char *key
-);
+
 
 #endif
 

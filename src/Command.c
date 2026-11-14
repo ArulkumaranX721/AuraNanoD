@@ -125,11 +125,14 @@ void execute_sql_command(const char *sql)
         statement.select_key,
         statement.select_value,
         statement.has_where,
-        statement.key
+        statement.key,
+        statement.condition_operator,
+        statement.has_second_condition,
+        statement.second_key,
+        statement.second_operator
     );
 
     break;
-
 
    case SQL_COMMAND_UPDATE:
 

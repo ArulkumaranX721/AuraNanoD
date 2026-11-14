@@ -45,4 +45,16 @@ int table_record_manager_list(
     const char *table_name
 );
 
+
+int table_record_manager_select(
+    const char *table_name,
+    int show_key,
+    int show_value,
+    int has_where,
+    const char *key,
+    const char *condition_operator,
+    int has_second_condition,
+    const char *second_key,
+    const char *second_operator
+);
 #endif

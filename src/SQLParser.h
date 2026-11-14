@@ -57,8 +57,14 @@ typedef struct
     int has_where;
       int select_key;
     int select_value;
+    char condition_operator[3];
+    int has_second_condition;
+
+char second_key[SQL_MAX_TOKEN_LENGTH];
+char second_operator[3];
 
 } SQLStatement;
+
 
 /* SQL parser */
 int sql_parse(
