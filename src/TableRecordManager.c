@@ -14,6 +14,11 @@
 #define TRM_VERSION 1
 #define TRM_MAX_RECORDS 1000
 
+static int evaluate_condition(
+    const char *record_key,
+    const SQLCondition *condition
+);
+
 typedef struct
 {
     uint32_t magic;
@@ -23,6 +28,116 @@ typedef struct
     TRM_Record records[TRM_MAX_RECORDS];
 
 } TRM_Database;
+
+
+typedef struct
+{
+    const SQLExpressionToken *tokens;
+    int count;
+    int position;
+    const char *record_key;
+    int error;
+} TRM_ExpressionParser;
+
+static int trm_parse_or(TRM_ExpressionParser *parser);
+
+static int trm_parse_primary(TRM_ExpressionParser *parser)
+{
+    if (parser->position >= parser->count)
+    {
+        parser->error = 1;
+        return 0;
+    }
+
+    const SQLExpressionToken *token =
+        &parser->tokens[parser->position];
+
+    if (token->type == EXPR_CONDITION)
+    {
+        parser->position++;
+
+        return evaluate_condition(
+            parser->record_key,
+            (SQLCondition *)&token->condition
+        );
+    }
+
+    if (token->type == EXPR_OPEN_PAREN)
+    {
+        parser->position++;
+
+        int result = trm_parse_or(parser);
+
+        if (parser->position >= parser->count ||
+            parser->tokens[parser->position].type != EXPR_CLOSE_PAREN)
+        {
+            parser->error = 1;
+            return 0;
+        }
+
+        parser->position++;
+        return result;
+    }
+
+    parser->error = 1;
+    return 0;
+}
+
+static int trm_parse_and(TRM_ExpressionParser *parser)
+{
+    int result = trm_parse_primary(parser);
+
+    while (!parser->error &&
+           parser->position < parser->count &&
+           parser->tokens[parser->position].type == EXPR_AND)
+    {
+        parser->position++;
+
+        int right = trm_parse_primary(parser);
+        result = result && right;
+    }
+
+    return result;
+}
+
+static int trm_parse_or(TRM_ExpressionParser *parser)
+{
+    int result = trm_parse_and(parser);
+
+    while (!parser->error &&
+           parser->position < parser->count &&
+           parser->tokens[parser->position].type == EXPR_OR)
+    {
+        parser->position++;
+
+        int right = trm_parse_and(parser);
+        result = result || right;
+    }
+
+    return result;
+}
+
+static int trm_evaluate_expression(
+    const char *record_key,
+    int expression_count,
+    const SQLExpressionToken expression[])
+{
+    TRM_ExpressionParser parser = {
+        expression,
+        expression_count,
+        0,
+        record_key,
+        0
+    };
+
+    int result = trm_parse_or(&parser);
+
+    if (parser.error || parser.position != parser.count)
+        return -1;
+
+    return result;
+}
+
 
 static TRM_Database database;
 
@@ -431,20 +546,20 @@ int table_record_manager_list(const char *table_name)
     return found;
 }
 
+
+
 int table_record_manager_select(
     const char *table_name,
     int show_key,
     int show_value,
-    int condition_count,
-    SQLCondition conditions[],
-    char logical_operators[][4])
+    int expression_count,
+    const SQLExpressionToken expression[])
 {
     if (table_name == NULL ||
         (!show_key && !show_value) ||
-        condition_count < 0 ||
-        condition_count > SQL_MAX_CONDITIONS ||
-        (condition_count > 0 && conditions == NULL) ||
-        (condition_count > 1 && logical_operators == NULL))
+        expression_count < 0 ||
+        expression_count > SQL_MAX_EXPRESSION_TOKENS ||
+        (expression_count > 0 && expression == NULL))
     {
         printf("TRM Error: Invalid SELECT arguments.\n");
         return 0;
@@ -456,17 +571,6 @@ int table_record_manager_select(
     {
         printf("TRM Error: Table not found: %s\n", table_name);
         return 0;
-    }
-
-    /* Validate logical operators */
-    for (int i = 0; i < condition_count - 1; i++)
-    {
-        if (strcmp(logical_operators[i], "AND") != 0 &&
-            strcmp(logical_operators[i], "OR") != 0)
-        {
-            printf("TRM Error: Invalid logical operator.\n");
-            return 0;
-        }
     }
 
     int found = 0;
@@ -492,31 +596,19 @@ int table_record_manager_select(
 
         int matches = 1;
 
-        if (condition_count > 0)
+        if (expression_count > 0)
         {
-            /* AND groups are evaluated before OR. */
-            int group_match =
-                evaluate_condition(record->key, &conditions[0]);
+            matches = trm_evaluate_expression(
+                record->key,
+                expression_count,
+                expression
+            );
 
-            int overall_match = 0;
-
-            for (int j = 0; j < condition_count - 1; j++)
+            if (matches == -1)
             {
-                int next_match =
-                    evaluate_condition(record->key, &conditions[j + 1]);
-
-                if (strcmp(logical_operators[j], "AND") == 0)
-                {
-                    group_match = group_match && next_match;
-                }
-                else
-                {
-                    overall_match = overall_match || group_match;
-                    group_match = next_match;
-                }
+                printf("TRM Error: Invalid WHERE expression.\n");
+                return 0;
             }
-
-            matches = overall_match || group_match;
         }
 
         if (!matches)

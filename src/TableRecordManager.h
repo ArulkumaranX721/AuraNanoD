@@ -51,9 +51,8 @@ int table_record_manager_select(
     const char *table_name,
     int show_key,
     int show_value,
-    int condition_count,
-    SQLCondition conditions[],
-    char logical_operators[][4]
+    int expression_count,
+    const SQLExpressionToken expression[]
 );
 
 #endif

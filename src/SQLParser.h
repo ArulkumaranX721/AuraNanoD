@@ -5,14 +5,32 @@
 #define SQL_MAX_TOKENS 64
 #define SQL_MAX_TOKEN_LENGTH 128
 #define SQL_MAX_CONDITIONS 10
+#define SQL_MAX_EXPRESSION_TOKENS 32
 
+/* SQL condition */
 typedef struct
 {
     char column[SQL_MAX_TOKEN_LENGTH];
     char comparison[3];
     char value[SQL_MAX_TOKEN_LENGTH];
-
 } SQLCondition;
+
+/* Expression token types */
+typedef enum
+{
+    EXPR_CONDITION,
+    EXPR_AND,
+    EXPR_OR,
+    EXPR_OPEN_PAREN,
+    EXPR_CLOSE_PAREN
+} SQLExpressionTokenType;
+
+/* Expression token */
+typedef struct
+{
+    SQLExpressionTokenType type;
+    SQLCondition condition;
+} SQLExpressionToken;
 
 /* SQL token types */
 typedef enum
@@ -59,31 +77,33 @@ typedef enum
 typedef struct
 {
     SQLCommandType type;
+
     int condition_count;
+    SQLCondition conditions[SQL_MAX_CONDITIONS];
+    char logical_operators[SQL_MAX_CONDITIONS - 1][4];
 
-SQLCondition conditions[SQL_MAX_CONDITIONS];
-
-char logical_operators[SQL_MAX_CONDITIONS - 1][4];
     char table_name[SQL_MAX_TOKEN_LENGTH];
     char key[SQL_MAX_TOKEN_LENGTH];
     char value[SQL_MAX_TOKEN_LENGTH];
+
     int has_where;
-      int select_key;
+    int select_key;
     int select_value;
+
     char condition_operator[3];
     int has_second_condition;
 
-char second_key[SQL_MAX_TOKEN_LENGTH];
-char second_operator[3];
-int has_or_condition;
-char or_key[SQL_MAX_TOKEN_LENGTH];
-char or_operator[3];
+    char second_key[SQL_MAX_TOKEN_LENGTH];
+    char second_operator[3];
 
+    int has_or_condition;
+    char or_key[SQL_MAX_TOKEN_LENGTH];
+    char or_operator[3];
 
+    int expression_count;
+    SQLExpressionToken expression[SQL_MAX_EXPRESSION_TOKENS];
 
 } SQLStatement;
-
-
 
 /* SQL parser */
 int sql_parse(
@@ -91,8 +111,4 @@ int sql_parse(
     SQLStatement *statement
 );
 
-
-
-
 #endif
- 

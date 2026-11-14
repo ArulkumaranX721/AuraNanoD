@@ -122,13 +122,12 @@ void execute_sql_command(const char *sql)
     case SQL_COMMAND_SELECT:
 
     table_record_manager_select(
-        statement.table_name,
-        statement.select_key,
-        statement.select_value,
-        statement.condition_count,
-        statement.conditions,
-        statement.logical_operators
-    );
+    statement.table_name,
+    statement.select_key,
+    statement.select_value,
+    statement.expression_count,
+    statement.expression
+);
 
     break;
 
