@@ -4,6 +4,8 @@
 #include "RecordManager.h"
 #include "PageManager.h"
 #include "BufferPool.h"
+#include "TableManager.h"
+#include "TableRecordManager.h"
 
 void command_loop(DatabaseConfig *database);
 
@@ -41,6 +43,18 @@ if (!page_manager_initialize(database.storage_path))
 if (!buffer_pool_initialize())
 {
     printf("\nLuraXDB could not initialize the buffer pool.\n");
+    return 1;
+}
+
+if (!table_manager_initialize())
+{
+    printf("Could not initialize Table Manager.\n");
+    return 1;
+}
+
+if (!table_record_manager_initialize())
+{
+    printf("Could not initialize Table Record Manager.\n");
     return 1;
 }
 

@@ -1,44 +1,31 @@
 
-#ifndef TABLERECORDMANAGER_H
-#define TABLERECORDMANAGER_H
+#ifndef TABLEMANAGER_H
+#define TABLEMANAGER_H
 
-#include "RecordManager.h"
-#include "TableManager.h"
-
-#define TRM_RECORDS_PER_PAGE 12
+#define TM_MAX_TABLES 32
+#define TM_MAX_TABLE_NAME 64
 
 typedef struct
 {
     int table_id;
-    char key[RM_MAX_KEY_SIZE];
-    char value[RM_MAX_VALUE_SIZE];
-} TRM_Record;
+    char table_name[TM_MAX_TABLE_NAME];
+    int active;
 
-int table_record_manager_insert(
+} TM_Table;
+
+/* Initialize table metadata */
+int table_manager_initialize(void);
+
+/* Create a new table */
+int table_manager_create(const char *table_name);
+
+/* Find a table */
+int table_manager_find(
     const char *table_name,
-    const char *key,
-    const char *value
+    TM_Table *result
 );
 
-int table_record_manager_find(
-    const char *table_name,
-    const char *key,
-    TRM_Record *result
-);
-
-int table_record_manager_update(
-    const char *table_name,
-    const char *key,
-    const char *new_value
-);
-
-int table_record_manager_delete(
-    const char *table_name,
-    const char *key
-);
-
-int table_record_manager_list(
-    const char *table_name
-);
+/* Display all tables */
+void table_manager_list(void);
 
 #endif

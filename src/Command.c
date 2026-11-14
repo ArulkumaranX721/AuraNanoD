@@ -7,6 +7,10 @@
 #include "PageManager.h"
 #include <stdlib.h>
 #include "BufferPool.h"
+#include "SQLParser.h"
+#include "TableRecordManager.h"
+#include "TableManager.h"
+
 
 void show_help(void)
 {
@@ -30,6 +34,12 @@ printf("BPOOLINFO - Display buffer pool statistics\n");
 printf("BPWRITE <id> <text> - Write text through the buffer pool\n");
 printf("BPREAD <id> - Read text through the buffer pool\n");
 printf("BPRESET - Reset cache statistics\n");
+printf("\nSQL Commands:\n");
+printf("CREATE TABLE <name> - Create a table\n");
+printf("INSERT INTO <table> VALUES ('key', 'value')\n");
+printf("SELECT * FROM <table> - Display table records\n");
+printf("UPDATE <table> SET value = 'new value' WHERE id = 'key';\n");
+printf("DELETE FROM <table> WHERE id = 'key';\n");
 }
 
 void clear_screen()
@@ -69,6 +79,104 @@ void show_version(void)
     printf("Version: 0.1.0\n");
     printf("Language: C17\n");
 }
+
+
+
+void execute_sql_command(const char *sql)
+{
+    SQLTokenList tokens;
+    SQLStatement statement;
+
+    /* Step 1: Tokenize SQL */
+    if (!sql_tokenize(sql, &tokens))
+    {
+        return;
+    }
+
+    /* Step 2: Parse SQL */
+    if (!sql_parse(&tokens, &statement))
+    {
+        return;
+    }
+
+    /* Step 3: Execute SQL */
+    switch (statement.type)
+    {
+        case SQL_COMMAND_CREATE_TABLE:
+
+            table_manager_create(statement.table_name);
+
+            break;
+
+        case SQL_COMMAND_INSERT:
+
+            table_record_manager_insert(
+                statement.table_name,
+                statement.key,
+                statement.value
+            );
+
+            break;
+
+       case SQL_COMMAND_SELECT:
+
+    if (statement.has_where)
+    {
+        TRM_Record result;
+
+        if (table_record_manager_find(
+                statement.table_name,
+                statement.key,
+                &result))
+        {
+            printf("\nMatching Record\n");
+            printf("------------------------------\n");
+            printf("Table ID : %d\n", result.table_id);
+            printf("Key      : %s\n", result.key);
+            printf("Value    : %s\n", result.value);
+        }
+        else
+        {
+            printf("No matching record found.\n");
+        }
+    }
+    else
+    {
+        table_record_manager_list(statement.table_name);
+    }
+
+    break;
+
+
+   case SQL_COMMAND_UPDATE:
+
+    printf("DEBUG Table : %s\n", statement.table_name);
+    printf("DEBUG Key   : %s\n", statement.key);
+    printf("DEBUG Value : %s\n", statement.value);
+
+    table_record_manager_update(
+        statement.table_name,
+        statement.key,
+        statement.value
+    );
+
+    break;
+
+   case SQL_COMMAND_DELETE:
+    table_record_manager_delete(
+        statement.table_name,
+        statement.key
+    );
+    break;
+
+        default:
+
+            printf("SQL Executor: Unsupported SQL statement.\n");
+
+            break;
+    }
+}
+
 
    void command_loop(DatabaseConfig *database)
 {
@@ -149,10 +257,18 @@ void show_version(void)
 
         char *arguments = cursor;
 
-        if (strcmp(operation, "HELP") == 0)
-        {
-            show_help();
-        }
+        if (strcmp(operation, "CREATE") == 0 ||
+    strcmp(operation, "INSERT") == 0 ||
+    strcmp(operation, "SELECT") == 0 ||
+    strcmp(operation, "UPDATE") == 0 ||
+    strcmp(operation, "DELETE") == 0)
+{
+    execute_sql_command(command);
+}
+else if (strcmp(operation, "HELP") == 0)
+{
+    show_help();
+}
         else if (strcmp(operation, "STATUS") == 0)
         {
             show_status(database);
@@ -340,7 +456,7 @@ else if (strcmp(operation, "UPDATE") == 0)
 
     record_manager_delete(key);
 }
-        else if (strcmp(command, "LIST") == 0)
+        else if (strcmp(operation, "LIST") == 0)
 {
     record_manager_list();
 }
