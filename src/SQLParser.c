@@ -23,6 +23,9 @@ static int is_sql_keyword(const char *word)
         "DELETE",
         "AND",
         "OR",
+        "LIKE",
+"IN",
+"BETWEEN",
         "DROP"
     };
 
@@ -595,6 +598,7 @@ statement->has_or_condition = 0;
     pos += 2;
 
 
+
 /* WHERE expression parser */
 statement->expression_count = 0;
 statement->condition_count = 0;
@@ -611,19 +615,15 @@ if (is_token(tokens, pos, "WHERE"))
     while (pos < tokens->count &&
            !is_token(tokens, pos, ";"))
     {
-        SQLExpressionToken *expr;
-
         if (statement->expression_count >= SQL_MAX_EXPRESSION_TOKENS)
         {
             printf("SQL Parser Error: Expression limit exceeded.\n");
             return 0;
         }
 
-        expr = &statement->expression[
-            statement->expression_count
-        ];
+        SQLExpressionToken *expr =
+            &statement->expression[statement->expression_count];
 
-        /* Opening parenthesis */
         if (is_token(tokens, pos, "("))
         {
             if (!expecting_operand)
@@ -636,8 +636,6 @@ if (is_token(tokens, pos, "WHERE"))
             depth++;
             pos++;
         }
-
-        /* Closing parenthesis */
         else if (is_token(tokens, pos, ")"))
         {
             if (expecting_operand || depth <= 0)
@@ -651,8 +649,6 @@ if (is_token(tokens, pos, "WHERE"))
             pos++;
             expecting_operand = 0;
         }
-
-        /* Logical operators */
         else if (is_token(tokens, pos, "AND") ||
                  is_token(tokens, pos, "OR"))
         {
@@ -668,113 +664,191 @@ if (is_token(tokens, pos, "WHERE"))
             pos++;
             expecting_operand = 1;
         }
-
-        /* Comparison condition */
         else
         {
-           if (!expecting_operand ||
-    !is_token(tokens, pos, "ID") ||
-    pos + 2 >= tokens->count ||
-    (!is_token(tokens, pos + 1, "=") &&
-     !is_token(tokens, pos + 1, "!=") &&
-     !is_token(tokens, pos + 1, ">") &&
-     !is_token(tokens, pos + 1, "<")) ||
-    tokens->tokens[pos + 2].type != SQL_TOKEN_STRING)
-{
-    printf("SQL Parser Error: Invalid WHERE condition.\n");
-    return 0;
-}
+            if (!expecting_operand ||
+                (!is_token(tokens, pos, "ID") &&
+                 !is_token(tokens, pos, "VALUE")))
+            {
+                printf("SQL Parser Error: Invalid WHERE column.\n");
+                return 0;
+            }
+
+            if (statement->condition_count >= SQL_MAX_CONDITIONS)
+            {
+                printf("SQL Parser Error: Too many WHERE conditions.\n");
+                return 0;
+            }
+
+            SQLCondition *condition = &expr->condition;
+
+            memset(condition, 0, sizeof(SQLCondition));
+
+            strcpy(condition->column, tokens->tokens[pos].value);
+            pos++;
+
+            if (pos >= tokens->count)
+            {
+                printf("SQL Parser Error: Missing comparison operator.\n");
+                return 0;
+            }
+
+            /* IN ('A', 'B', ...) */
+            if (is_token(tokens, pos, "IN"))
+            {
+                strcpy(condition->comparison, "IN");
+                pos++;
+
+                if (!is_token(tokens, pos, "("))
+                {
+                    printf("SQL Parser Error: Expected '(' after IN.\n");
+                    return 0;
+                }
+
+                pos++;
+
+                while (1)
+                {
+                    if (condition->value_count >= SQL_MAX_IN_VALUES)
+                    {
+                        printf("SQL Parser Error: IN value limit exceeded.\n");
+                        return 0;
+                    }
+
+                    if (pos >= tokens->count ||
+                        tokens->tokens[pos].type != SQL_TOKEN_STRING)
+                    {
+                        printf("SQL Parser Error: Expected string in IN list.\n");
+                        return 0;
+                    }
+
+                    strcpy(
+                        condition->values[condition->value_count],
+                        tokens->tokens[pos].value
+                    );
+
+                    condition->value_count++;
+                    pos++;
+
+                    if (is_token(tokens, pos, ","))
+                    {
+                        pos++;
+                        continue;
+                    }
+
+                    if (is_token(tokens, pos, ")"))
+                    {
+                        pos++;
+                        break;
+                    }
+
+                    printf("SQL Parser Error: Invalid IN list.\n");
+                    return 0;
+                }
+            }
+
+            /* BETWEEN 'A' AND 'B' */
+            else if (is_token(tokens, pos, "BETWEEN"))
+            {
+                strcpy(condition->comparison, "BETWEEN");
+                pos++;
+
+                if (pos >= tokens->count ||
+                    tokens->tokens[pos].type != SQL_TOKEN_STRING)
+                {
+                    printf("SQL Parser Error: Missing BETWEEN lower value.\n");
+                    return 0;
+                }
+
+                strcpy(condition->value, tokens->tokens[pos].value);
+                pos++;
+
+                if (!is_token(tokens, pos, "AND"))
+                {
+                    printf("SQL Parser Error: Expected AND in BETWEEN.\n");
+                    return 0;
+                }
+
+                pos++;
+
+                if (pos >= tokens->count ||
+                    tokens->tokens[pos].type != SQL_TOKEN_STRING)
+                {
+                    printf("SQL Parser Error: Missing BETWEEN upper value.\n");
+                    return 0;
+                }
+
+                strcpy(condition->second_value, tokens->tokens[pos].value);
+                pos++;
+            }
+
+            /* =, !=, >, <, LIKE */
+            else
+            {
+                if (is_token(tokens, pos, "=") ||
+                    is_token(tokens, pos, "!=") ||
+                    is_token(tokens, pos, ">") ||
+                    is_token(tokens, pos, "<") ||
+                    is_token(tokens, pos, "LIKE"))
+                {
+                    strcpy(condition->comparison, tokens->tokens[pos].value);
+                    pos++;
+                }
+                else
+                {
+                    printf("SQL Parser Error: Invalid comparison operator.\n");
+                    return 0;
+                }
+
+                if (pos >= tokens->count ||
+                    tokens->tokens[pos].type != SQL_TOKEN_STRING)
+                {
+                    printf("SQL Parser Error: Expected quoted comparison value.\n");
+                    return 0;
+                }
+
+                strcpy(condition->value, tokens->tokens[pos].value);
+                pos++;
+            }
 
             expr->type = EXPR_CONDITION;
-
-            strcpy(expr->condition.column,
-                   tokens->tokens[pos].value);
-
-            strcpy(expr->condition.comparison,
-                   tokens->tokens[pos + 1].value);
-
-            strcpy(expr->condition.value,
-                   tokens->tokens[pos + 2].value);
-
             statement->condition_count++;
-
-            pos += 3;
             expecting_operand = 0;
         }
 
         statement->expression_count++;
     }
 
-    if (expecting_operand || depth != 0 ||
+    if (expecting_operand ||
+        depth != 0 ||
         statement->condition_count == 0)
     {
         printf("SQL Parser Error: Incomplete WHERE expression.\n");
         return 0;
     }
-}
 
-/* Optional AND / OR condition */
-if (is_token(tokens, pos, "AND") ||
-    is_token(tokens, pos, "OR"))
+} /* End WHERE block */
+
+/* Optional semicolon */
+if (pos < tokens->count && is_token(tokens, pos, ";"))
 {
-    int is_or = is_token(tokens, pos, "OR");
-
     pos++;
-
-    if (pos + 2 >= tokens->count ||
-        !is_token(tokens, pos, "ID") ||
-        tokens->tokens[pos + 2].type != SQL_TOKEN_STRING)
-    {
-        printf("SQL Parser Error: Invalid second WHERE condition.\n");
-        return 0;
-    }
-
-    if (!is_token(tokens, pos + 1, "=") &&
-        !is_token(tokens, pos + 1, "!=") &&
-        !is_token(tokens, pos + 1, ">") &&
-        !is_token(tokens, pos + 1, "<"))
-    {
-        printf("SQL Parser Error: Invalid WHERE operator.\n");
-        return 0;
-    }
-
-    if (is_or)
-    {
-        strcpy(statement->or_operator, tokens->tokens[pos + 1].value);
-        strcpy(statement->or_key, tokens->tokens[pos + 2].value);
-        statement->has_or_condition = 1;
-    }
-    else
-    {
-        strcpy(statement->second_operator, tokens->tokens[pos + 1].value);
-        strcpy(statement->second_key, tokens->tokens[pos + 2].value);
-        statement->has_second_condition = 1;
-    }
-
-    pos += 3;
 }
-else
+
+/* Reject unexpected tokens */
+if (pos != tokens->count)
 {
-    statement->has_second_condition = 0;
-}
-
-    /* Optional semicolon */
-    if (pos < tokens->count && is_token(tokens, pos, ";"))
-    {
-        pos++;
-    }
-
-    if (pos != tokens->count)
-    {
-        printf("SQL Parser Error: Unexpected SELECT tokens.\n");
-        return 0;
-    }
-
-    return 1;
-}
-
-
-      
-    printf("SQL Parser Error: Unsupported SQL command.\n");
+    printf("SQL Parser Error: Unexpected SELECT tokens.\n");
     return 0;
 }
+
+return 1;
+
+} /* End SELECT block */
+
+/* Unsupported SQL command */
+printf("SQL Parser Error: Unsupported SQL command.\n");
+return 0;
+
+} /* End sql_parse() */
+        

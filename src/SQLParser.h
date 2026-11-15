@@ -2,19 +2,26 @@
 #ifndef SQLPARSER_H
 #define SQLPARSER_H
 
+#define SQL_MAX_IN_VALUES 10
+
 #define SQL_MAX_TOKENS 64
 #define SQL_MAX_TOKEN_LENGTH 128
 #define SQL_MAX_CONDITIONS 10
 #define SQL_MAX_EXPRESSION_TOKENS 32
 
-/* SQL condition */
+
 typedef struct
 {
     char column[SQL_MAX_TOKEN_LENGTH];
-    char comparison[3];
-    char value[SQL_MAX_TOKEN_LENGTH];
-} SQLCondition;
+    char comparison[16];
 
+    char value[SQL_MAX_TOKEN_LENGTH];
+    char second_value[SQL_MAX_TOKEN_LENGTH];
+
+    int value_count;
+    char values[SQL_MAX_IN_VALUES][SQL_MAX_TOKEN_LENGTH];
+
+} SQLCondition;
 /* Expression token types */
 typedef enum
 {

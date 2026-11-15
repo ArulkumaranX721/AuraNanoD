@@ -2,10 +2,8 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
-#include<stdlib.h>
 #include <stdlib.h>
-#include <string.h>
-#include <stdio.h>
+#include <ctype.h>
 #include "SQLParser.h"
 #include "TableRecordManager.h"
 
@@ -14,10 +12,6 @@
 #define TRM_VERSION 1
 #define TRM_MAX_RECORDS 1000
 
-static int evaluate_condition(
-    const char *record_key,
-    const SQLCondition *condition
-);
 
 typedef struct
 {
@@ -30,113 +24,7 @@ typedef struct
 } TRM_Database;
 
 
-typedef struct
-{
-    const SQLExpressionToken *tokens;
-    int count;
-    int position;
-    const char *record_key;
-    int error;
-} TRM_ExpressionParser;
 
-static int trm_parse_or(TRM_ExpressionParser *parser);
-
-static int trm_parse_primary(TRM_ExpressionParser *parser)
-{
-    if (parser->position >= parser->count)
-    {
-        parser->error = 1;
-        return 0;
-    }
-
-    const SQLExpressionToken *token =
-        &parser->tokens[parser->position];
-
-    if (token->type == EXPR_CONDITION)
-    {
-        parser->position++;
-
-        return evaluate_condition(
-            parser->record_key,
-            (SQLCondition *)&token->condition
-        );
-    }
-
-    if (token->type == EXPR_OPEN_PAREN)
-    {
-        parser->position++;
-
-        int result = trm_parse_or(parser);
-
-        if (parser->position >= parser->count ||
-            parser->tokens[parser->position].type != EXPR_CLOSE_PAREN)
-        {
-            parser->error = 1;
-            return 0;
-        }
-
-        parser->position++;
-        return result;
-    }
-
-    parser->error = 1;
-    return 0;
-}
-
-static int trm_parse_and(TRM_ExpressionParser *parser)
-{
-    int result = trm_parse_primary(parser);
-
-    while (!parser->error &&
-           parser->position < parser->count &&
-           parser->tokens[parser->position].type == EXPR_AND)
-    {
-        parser->position++;
-
-        int right = trm_parse_primary(parser);
-        result = result && right;
-    }
-
-    return result;
-}
-
-static int trm_parse_or(TRM_ExpressionParser *parser)
-{
-    int result = trm_parse_and(parser);
-
-    while (!parser->error &&
-           parser->position < parser->count &&
-           parser->tokens[parser->position].type == EXPR_OR)
-    {
-        parser->position++;
-
-        int right = trm_parse_and(parser);
-        result = result || right;
-    }
-
-    return result;
-}
-
-static int trm_evaluate_expression(
-    const char *record_key,
-    int expression_count,
-    const SQLExpressionToken expression[])
-{
-    TRM_ExpressionParser parser = {
-        expression,
-        expression_count,
-        0,
-        record_key,
-        0
-    };
-
-    int result = trm_parse_or(&parser);
-
-    if (parser.error || parser.position != parser.count)
-        return -1;
-
-    return result;
-}
 
 
 static TRM_Database database;
@@ -308,47 +196,244 @@ int table_record_manager_insert(
 
     return 1;
 }
-/* Compare record ID with a condition value. */
-static int evaluate_condition(
-    const char *record_key,
-    const SQLCondition *condition)
-{
-    int comparison = 0;
 
+static int compare_values(const char *left, const char *right)
+{
     char *end1;
     char *end2;
 
-    long n1 = strtol(record_key, &end1, 10);
-    long n2 = strtol(condition->value, &end2, 10);
+    long n1 = strtol(left, &end1, 10);
+    long n2 = strtol(right, &end2, 10);
 
-    if (*record_key != '\0' &&
-        *condition->value != '\0' &&
+    if (left[0] != '\0' &&
+        right[0] != '\0' &&
         *end1 == '\0' &&
         *end2 == '\0')
     {
-        if (n1 > n2)
-            comparison = 1;
-        else if (n1 < n2)
-            comparison = -1;
+        if (n1 > n2) return 1;
+        if (n1 < n2) return -1;
+        return 0;
     }
-    else
+
+    return strcmp(left, right);
+}
+
+/* SQL LIKE matching: % = any sequence, _ = one character */
+static int match_like(const char *text, const char *pattern)
+{
+    if (*pattern == '\0')
+        return *text == '\0';
+
+    if (*pattern == '%')
     {
-        comparison = strcmp(record_key, condition->value);
+        while (*pattern == '%')
+            pattern++;
+
+        if (*pattern == '\0')
+            return 1;
+
+        while (*text != '\0')
+        {
+            if (match_like(text, pattern))
+                return 1;
+
+            text++;
+        }
+
+        return 0;
     }
 
-    if (strcmp(condition->comparison, "=") == 0)
-        return comparison == 0;
+    if (*text == '\0')
+        return 0;
 
-    if (strcmp(condition->comparison, "!=") == 0)
-        return comparison != 0;
-
-    if (strcmp(condition->comparison, ">") == 0)
-        return comparison > 0;
-
-    if (strcmp(condition->comparison, "<") == 0)
-        return comparison < 0;
+    if (*pattern == '_' || *pattern == *text)
+        return match_like(text + 1, pattern + 1);
 
     return 0;
+}
+
+/* Case-insensitive comparison for SQL column names and keywords. */
+static int trm_equals_ignore_case(const char *left, const char *right)
+{
+    if (left == NULL || right == NULL)
+        return 0;
+
+    while (*left != '\0' && *right != '\0')
+    {
+        if (tolower((unsigned char)*left) !=
+            tolower((unsigned char)*right))
+            return 0;
+
+        left++;
+        right++;
+    }
+
+    return *left == '\0' && *right == '\0';
+}
+
+/* Evaluate a condition against an entire record. */
+static int evaluate_condition(
+    const TRM_Record *record,
+    const SQLCondition *condition)
+{
+    if (record == NULL || condition == NULL)
+        return 0;
+
+    const char *record_value;
+
+    /* The parser preserves the user's original letter case. */
+    if (trm_equals_ignore_case(condition->column, "ID"))
+        record_value = record->key;
+    else if (trm_equals_ignore_case(condition->column, "VALUE"))
+        record_value = record->value;
+    else
+        return 0;
+
+    if (strcmp(condition->comparison, "=") == 0)
+        return compare_values(record_value, condition->value) == 0;
+
+    if (strcmp(condition->comparison, "!=") == 0)
+        return compare_values(record_value, condition->value) != 0;
+
+    if (strcmp(condition->comparison, ">") == 0)
+        return compare_values(record_value, condition->value) > 0;
+
+    if (strcmp(condition->comparison, "<") == 0)
+        return compare_values(record_value, condition->value) < 0;
+
+    if (trm_equals_ignore_case(condition->comparison, "LIKE"))
+        return match_like(record_value, condition->value);
+
+    if (trm_equals_ignore_case(condition->comparison, "IN"))
+    {
+        for (int i = 0; i < condition->value_count; i++)
+        {
+            if (compare_values(
+                    record_value,
+                    condition->values[i]) == 0)
+                return 1;
+        }
+
+        return 0;
+    }
+
+    if (trm_equals_ignore_case(condition->comparison, "BETWEEN"))
+    {
+        int lower = compare_values(record_value, condition->value);
+        int upper = compare_values(record_value, condition->second_value);
+
+        return lower >= 0 && upper <= 0;
+    }
+
+    return 0;
+}
+
+typedef struct
+{
+    const SQLExpressionToken *tokens;
+    int count;
+    int position;
+    const TRM_Record *record;
+    int error;
+} TRM_ExpressionParser;
+
+static int trm_parse_or(TRM_ExpressionParser *parser);
+
+static int trm_parse_primary(TRM_ExpressionParser *parser)
+{
+    if (parser->position >= parser->count)
+    {
+        parser->error = 1;
+        return 0;
+    }
+
+    const SQLExpressionToken *token =
+        &parser->tokens[parser->position];
+
+    if (token->type == EXPR_CONDITION)
+    {
+        parser->position++;
+
+        return evaluate_condition(
+            parser->record,
+            &token->condition
+        );
+    }
+
+    if (token->type == EXPR_OPEN_PAREN)
+    {
+        parser->position++;
+
+        int result = trm_parse_or(parser);
+
+        if (parser->position >= parser->count ||
+            parser->tokens[parser->position].type != EXPR_CLOSE_PAREN)
+        {
+            parser->error = 1;
+            return 0;
+        }
+
+        parser->position++;
+        return result;
+    }
+
+    parser->error = 1;
+    return 0;
+}
+
+static int trm_parse_and(TRM_ExpressionParser *parser)
+{
+    int result = trm_parse_primary(parser);
+
+    while (!parser->error &&
+           parser->position < parser->count &&
+           parser->tokens[parser->position].type == EXPR_AND)
+    {
+        parser->position++;
+
+        int right = trm_parse_primary(parser);
+        result = result && right;
+    }
+
+    return result;
+}
+
+static int trm_parse_or(TRM_ExpressionParser *parser)
+{
+    int result = trm_parse_and(parser);
+
+    while (!parser->error &&
+           parser->position < parser->count &&
+           parser->tokens[parser->position].type == EXPR_OR)
+    {
+        parser->position++;
+
+        int right = trm_parse_and(parser);
+        result = result || right;
+    }
+
+    return result;
+}
+
+static int trm_evaluate_expression(
+    const TRM_Record *record,
+    int expression_count,
+    const SQLExpressionToken expression[])
+{
+    TRM_ExpressionParser parser = {
+        expression,
+        expression_count,
+        0,
+        record,
+        0
+    };
+
+    int result = trm_parse_or(&parser);
+
+    if (parser.error || parser.position != parser.count)
+        return -1;
+
+    return result;
 }
 
 /* Find a record inside a specific table. */
@@ -599,10 +684,10 @@ int table_record_manager_select(
         if (expression_count > 0)
         {
             matches = trm_evaluate_expression(
-                record->key,
-                expression_count,
-                expression
-            );
+    record,
+    expression_count,
+    expression
+);
 
             if (matches == -1)
             {

@@ -40,6 +40,19 @@ printf("INSERT INTO <table> VALUES ('key', 'value')\n");
 printf("SELECT * FROM <table> - Display table records\n");
 printf("UPDATE <table> SET value = 'new value' WHERE id = 'key';\n");
 printf("DELETE FROM <table> WHERE id = 'key';\n");
+printf("\nSQL WHERE Features:\n");
+printf("WHERE id = '101'\n");
+printf("WHERE value = 'Database Engineer'\n");
+printf("WHERE value LIKE '%%Database%%'\n");
+printf("WHERE id IN ('101', '102')\n");
+printf("WHERE id BETWEEN '101' AND '200'\n");
+printf("\nSQL WHERE Features:\n");
+printf("WHERE id = '101'\n");
+printf("WHERE value = 'Database Engineer'\n");
+printf("WHERE value LIKE '%%Database%%'\n");
+printf("WHERE (id = '101' OR id = '102') AND value LIKE '%%Engineer%%'\n");
+printf("WHERE id IN ('101', '102')\n");
+printf("WHERE id BETWEEN '101' AND '200'\n");
 }
 
 void clear_screen()
