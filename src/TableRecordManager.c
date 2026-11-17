@@ -592,6 +592,139 @@ int table_record_manager_delete(
     return 0;
 }
 
+/* Update every record matching a WHERE expression. */
+int table_record_manager_update_where(
+    const char *table_name,
+    const char *new_value,
+    int expression_count,
+    const SQLExpressionToken expression[])
+{
+    if (table_name == NULL || new_value == NULL ||
+        strlen(new_value) >= RM_MAX_VALUE_SIZE ||
+        expression == NULL || expression_count <= 0 ||
+        expression_count > SQL_MAX_EXPRESSION_TOKENS)
+    {
+        printf("TRM Error: Invalid UPDATE WHERE arguments.\n");
+        return 0;
+    }
+
+    int table_id;
+    if (!get_table_id(table_name, &table_id))
+        return 0;
+
+    TRM_Database *backup = malloc(sizeof(*backup));
+    if (backup == NULL)
+    {
+        printf("TRM Error: Not enough memory for UPDATE rollback.\n");
+        return 0;
+    }
+    memcpy(backup, &database, sizeof(database));
+
+    int affected = 0;
+    for (int i = 0; i < database.record_count; i++)
+    {
+        TRM_Record *record = &database.records[i];
+        if (record->table_id != table_id)
+            continue;
+
+        int matches = trm_evaluate_expression(record, expression_count, expression);
+        if (matches < 0)
+        {
+            printf("TRM Error: Invalid WHERE expression.\n");
+            memcpy(&database, backup, sizeof(database));
+            free(backup);
+            return 0;
+        }
+        if (matches)
+        {
+            strcpy(record->value, new_value);
+            affected++;
+        }
+    }
+
+    if (affected > 0 && !save_records())
+    {
+        memcpy(&database, backup, sizeof(database));
+        free(backup);
+        return 0;
+    }
+
+    free(backup);
+    printf("UPDATE completed. Rows affected: %d\n", affected);
+    return 1;
+}
+
+/* Delete every record matching a WHERE expression. */
+int table_record_manager_delete_where(
+    const char *table_name,
+    int expression_count,
+    const SQLExpressionToken expression[])
+{
+    if (table_name == NULL || expression == NULL ||
+        expression_count <= 0 ||
+        expression_count > SQL_MAX_EXPRESSION_TOKENS)
+    {
+        printf("TRM Error: Invalid DELETE WHERE arguments.\n");
+        return 0;
+    }
+
+    int table_id;
+    if (!get_table_id(table_name, &table_id))
+        return 0;
+
+    TRM_Database *backup = malloc(sizeof(*backup));
+    if (backup == NULL)
+    {
+        printf("TRM Error: Not enough memory for DELETE rollback.\n");
+        return 0;
+    }
+    memcpy(backup, &database, sizeof(database));
+
+    int write_index = 0;
+    int affected = 0;
+    for (int read_index = 0; read_index < database.record_count; read_index++)
+    {
+        TRM_Record current = database.records[read_index];
+        int remove_record = 0;
+
+        if (current.table_id == table_id)
+        {
+            int matches = trm_evaluate_expression(&current, expression_count, expression);
+            if (matches < 0)
+            {
+                printf("TRM Error: Invalid WHERE expression.\n");
+                memcpy(&database, backup, sizeof(database));
+                free(backup);
+                return 0;
+            }
+            remove_record = matches;
+        }
+
+        if (remove_record)
+            affected++;
+        else
+            database.records[write_index++] = current;
+    }
+
+    if (affected > 0)
+    {
+        for (int i = write_index; i < database.record_count; i++)
+            memset(&database.records[i], 0, sizeof(TRM_Record));
+        database.record_count = write_index;
+
+        if (!save_records())
+        {
+            memcpy(&database, backup, sizeof(database));
+            free(backup);
+            return 0;
+        }
+    }
+
+    free(backup);
+    printf("DELETE completed. Rows affected: %d\n", affected);
+    return 1;
+}
+
 /* List records belonging to one table. */
 int table_record_manager_list(const char *table_name)
 {

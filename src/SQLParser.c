@@ -421,84 +421,76 @@ int sql_parse(
         return 1;
     }
 
-    /* UPDATE employees SET value = 'Senior Engineer' WHERE id = '101'; */
+    /* UPDATE table SET value = 'new value' WHERE <expression>; */
     if (is_token(tokens, 0, "UPDATE"))
     {
-        if (tokens->count < 10 ||
+        if (tokens->count < 8 ||
             tokens->tokens[1].type != SQL_TOKEN_IDENTIFIER ||
             !is_token(tokens, 2, "SET") ||
             !is_token(tokens, 3, "VALUE") ||
             !is_token(tokens, 4, "=") ||
             tokens->tokens[5].type != SQL_TOKEN_STRING ||
-            !is_token(tokens, 6, "WHERE") ||
-            !is_token(tokens, 7, "ID") ||
-            !is_token(tokens, 8, "=") ||
-            tokens->tokens[9].type != SQL_TOKEN_STRING)
+            !is_token(tokens, 6, "WHERE"))
         {
-            printf("SQL Parser Error: Invalid UPDATE syntax.\n");
+            printf("SQL Parser Error: Invalid UPDATE syntax. WHERE is required.\n");
             return 0;
         }
 
-        int end = 10;
+        SQLTokenList select_tokens = {0};
+        strcpy(select_tokens.tokens[0].value, "SELECT");
+        select_tokens.tokens[0].type = SQL_TOKEN_KEYWORD;
+        strcpy(select_tokens.tokens[1].value, "*");
+        select_tokens.tokens[1].type = SQL_TOKEN_SYMBOL;
+        strcpy(select_tokens.tokens[2].value, "FROM");
+        select_tokens.tokens[2].type = SQL_TOKEN_KEYWORD;
+        select_tokens.tokens[3] = tokens->tokens[1];
+        for (int i = 6; i < tokens->count; i++)
+            select_tokens.tokens[4 + i - 6] = tokens->tokens[i];
+        select_tokens.count = 4 + tokens->count - 6;
 
-        if (end < tokens->count && is_token(tokens, end, ";"))
-        {
-            end++;
-        }
-
-        if (end != tokens->count)
-        {
-            printf("SQL Parser Error: Unexpected UPDATE tokens.\n");
+        SQLStatement parsed_where;
+        if (!sql_parse(&select_tokens, &parsed_where) || !parsed_where.has_where)
             return 0;
-        }
 
+        *statement = parsed_where;
         statement->type = SQL_COMMAND_UPDATE;
-
-        strcpy(statement->table_name, tokens->tokens[1].value);
         strcpy(statement->value, tokens->tokens[5].value);
-        strcpy(statement->key, tokens->tokens[9].value);
-
         return 1;
     }
 
-    /* DELETE FROM employees WHERE id = '101'; */
+    /* DELETE FROM table WHERE <expression>; */
     if (is_token(tokens, 0, "DELETE"))
     {
-        if (tokens->count < 7 ||
+        if (tokens->count < 5 || tokens->count >= SQL_MAX_TOKENS ||
             !is_token(tokens, 1, "FROM") ||
             tokens->tokens[2].type != SQL_TOKEN_IDENTIFIER ||
-            !is_token(tokens, 3, "WHERE") ||
-            !is_token(tokens, 4, "ID") ||
-            !is_token(tokens, 5, "=") ||
-            tokens->tokens[6].type != SQL_TOKEN_STRING)
+            !is_token(tokens, 3, "WHERE"))
         {
-            printf("SQL Parser Error: Invalid DELETE syntax.\n");
+            printf("SQL Parser Error: Invalid DELETE syntax. WHERE is required.\n");
             return 0;
         }
 
-        int end = 7;
+        SQLTokenList select_tokens = {0};
+        strcpy(select_tokens.tokens[0].value, "SELECT");
+        select_tokens.tokens[0].type = SQL_TOKEN_KEYWORD;
+        strcpy(select_tokens.tokens[1].value, "*");
+        select_tokens.tokens[1].type = SQL_TOKEN_SYMBOL;
+        strcpy(select_tokens.tokens[2].value, "FROM");
+        select_tokens.tokens[2].type = SQL_TOKEN_KEYWORD;
+        select_tokens.tokens[3] = tokens->tokens[2];
+        for (int i = 3; i < tokens->count; i++)
+            select_tokens.tokens[4 + i - 3] = tokens->tokens[i];
+        select_tokens.count = 4 + tokens->count - 3;
 
-        if (end < tokens->count && is_token(tokens, end, ";"))
-        {
-            end++;
-        }
-
-        if (end != tokens->count)
-        {
-            printf("SQL Parser Error: Unexpected DELETE tokens.\n");
+        SQLStatement parsed_where;
+        if (!sql_parse(&select_tokens, &parsed_where) || !parsed_where.has_where)
             return 0;
-        }
 
+        *statement = parsed_where;
         statement->type = SQL_COMMAND_DELETE;
-
-        strcpy(statement->table_name, tokens->tokens[2].value);
-        strcpy(statement->key, tokens->tokens[6].value);
-
         return 1;
     }
 
-    /* SELECT * FROM employees; */
-   
 /*
     Supported SELECT statements:
 
@@ -851,4 +843,3 @@ printf("SQL Parser Error: Unsupported SQL command.\n");
 return 0;
 
 } /* End sql_parse() */
-        

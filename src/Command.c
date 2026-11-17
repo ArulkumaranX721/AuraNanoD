@@ -145,23 +145,19 @@ void execute_sql_command(const char *sql)
     break;
 
    case SQL_COMMAND_UPDATE:
-
-    printf("DEBUG Table : %s\n", statement.table_name);
-    printf("DEBUG Key   : %s\n", statement.key);
-    printf("DEBUG Value : %s\n", statement.value);
-
-    table_record_manager_update(
+    table_record_manager_update_where(
         statement.table_name,
-        statement.key,
-        statement.value
+        statement.value,
+        statement.expression_count,
+        statement.expression
     );
-
     break;
 
    case SQL_COMMAND_DELETE:
-    table_record_manager_delete(
+    table_record_manager_delete_where(
         statement.table_name,
-        statement.key
+        statement.expression_count,
+        statement.expression
     );
     break;
 
