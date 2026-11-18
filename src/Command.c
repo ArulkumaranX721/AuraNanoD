@@ -135,7 +135,18 @@ void execute_sql_command(const char *sql)
 
     case SQL_COMMAND_SELECT:
 
-    table_record_manager_select(
+    if (statement.aggregate_type == SQL_AGGREGATE_COUNT)
+    {
+        table_record_manager_count(
+            statement.table_name,
+            statement.aggregate_column,
+            statement.expression_count,
+            statement.expression
+        );
+    }
+    else
+    {
+        table_record_manager_select(
     statement.table_name,
     statement.select_key,
     statement.select_value,
@@ -145,7 +156,8 @@ void execute_sql_command(const char *sql)
     statement.order_desc,
     statement.has_limit,
     statement.limit
-);
+        );
+    }
 
     break;
 

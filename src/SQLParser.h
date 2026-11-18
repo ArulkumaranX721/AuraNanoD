@@ -1,29 +1,23 @@
-
 #ifndef SQLPARSER_H
 #define SQLPARSER_H
 
 #define SQL_MAX_IN_VALUES 10
-
 #define SQL_MAX_TOKENS 64
 #define SQL_MAX_TOKEN_LENGTH 128
 #define SQL_MAX_CONDITIONS 10
 #define SQL_MAX_EXPRESSION_TOKENS 32
 #define SQL_MAX_LIMIT_VALUE 1000000
 
-
 typedef struct
 {
     char column[SQL_MAX_TOKEN_LENGTH];
     char comparison[16];
-
     char value[SQL_MAX_TOKEN_LENGTH];
     char second_value[SQL_MAX_TOKEN_LENGTH];
-
     int value_count;
     char values[SQL_MAX_IN_VALUES][SQL_MAX_TOKEN_LENGTH];
-
 } SQLCondition;
-/* Expression token types */
+
 typedef enum
 {
     EXPR_CONDITION,
@@ -33,14 +27,12 @@ typedef enum
     EXPR_CLOSE_PAREN
 } SQLExpressionTokenType;
 
-/* Expression token */
 typedef struct
 {
     SQLExpressionTokenType type;
     SQLCondition condition;
 } SQLExpressionToken;
 
-/* SQL token types */
 typedef enum
 {
     SQL_TOKEN_KEYWORD,
@@ -50,27 +42,21 @@ typedef enum
     SQL_TOKEN_SYMBOL
 } SQLTokenType;
 
-/* Individual SQL token */
 typedef struct
 {
     SQLTokenType type;
     char value[SQL_MAX_TOKEN_LENGTH];
 } SQLToken;
 
-/* Collection of SQL tokens */
 typedef struct
 {
     SQLToken tokens[SQL_MAX_TOKENS];
     int count;
 } SQLTokenList;
 
-/* SQL tokenizer */
 int sql_tokenize(const char *sql, SQLTokenList *result);
-
-/* Display tokens */
 void sql_print_tokens(const SQLTokenList *tokens);
 
-/* Supported SQL commands */
 typedef enum
 {
     SQL_COMMAND_UNKNOWN,
@@ -81,33 +67,31 @@ typedef enum
     SQL_COMMAND_DELETE
 } SQLCommandType;
 
-/* Parsed SQL statement */
+typedef enum
+{
+    SQL_AGGREGATE_NONE,
+    SQL_AGGREGATE_COUNT
+} SQLAggregateType;
+
 typedef struct
 {
     SQLCommandType type;
-
     int condition_count;
     SQLCondition conditions[SQL_MAX_CONDITIONS];
     char logical_operators[SQL_MAX_CONDITIONS - 1][4];
-
     char table_name[SQL_MAX_TOKEN_LENGTH];
     char key[SQL_MAX_TOKEN_LENGTH];
     char value[SQL_MAX_TOKEN_LENGTH];
-
     int has_where;
     int select_key;
     int select_value;
-
     char condition_operator[3];
     int has_second_condition;
-
     char second_key[SQL_MAX_TOKEN_LENGTH];
     char second_operator[3];
-
     int has_or_condition;
     char or_key[SQL_MAX_TOKEN_LENGTH];
     char or_operator[3];
-
     int expression_count;
     SQLExpressionToken expression[SQL_MAX_EXPRESSION_TOKENS];
 
@@ -118,12 +102,11 @@ typedef struct
     int has_limit;
     int limit;
 
+    /* Sprint 4: aggregate query support. */
+    SQLAggregateType aggregate_type;
+    char aggregate_column[SQL_MAX_TOKEN_LENGTH];
 } SQLStatement;
 
-/* SQL parser */
-int sql_parse(
-    const SQLTokenList *tokens,
-    SQLStatement *statement
-);
+int sql_parse(const SQLTokenList *tokens, SQLStatement *statement);
 
 #endif

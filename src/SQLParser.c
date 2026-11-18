@@ -513,8 +513,45 @@ if (is_token(tokens, 0, "SELECT"))
     statement->has_second_condition = 0;
 statement->has_or_condition = 0;
 
+    /* Sprint 4: SELECT COUNT(*) or COUNT(column). */
+    if (is_token(tokens, pos, "COUNT"))
+    {
+        statement->aggregate_type = SQL_AGGREGATE_COUNT;
+        pos++;
+
+        if (!is_token(tokens, pos, "("))
+        {
+            printf("SQL Parser Error: Expected '(' after COUNT.\\n");
+            return 0;
+        }
+        pos++;
+
+        if (is_token(tokens, pos, "*"))
+        {
+            strcpy(statement->aggregate_column, "*");
+            pos++;
+        }
+        else if (is_token(tokens, pos, "ID") ||
+                 is_token(tokens, pos, "VALUE"))
+        {
+            strcpy(statement->aggregate_column, tokens->tokens[pos].value);
+            pos++;
+        }
+        else
+        {
+            printf("SQL Parser Error: COUNT supports *, id, or value.\\n");
+            return 0;
+        }
+
+        if (!is_token(tokens, pos, ")"))
+        {
+            printf("SQL Parser Error: Expected ')' after COUNT argument.\\n");
+            return 0;
+        }
+        pos++;
+    }
     /* SELECT * */
-    if (is_token(tokens, pos, "*"))
+    else if (is_token(tokens, pos, "*"))
     {
         statement->select_key = 1;
         statement->select_value = 1;
@@ -879,6 +916,14 @@ if (is_token(tokens, pos, "LIMIT"))
     statement->has_limit = 1;
     statement->limit = (int)parsed_limit;
     pos += 2;
+}
+
+/* Aggregate output is one summary row; sorting/limiting is not supported yet. */
+if (statement->aggregate_type != SQL_AGGREGATE_NONE &&
+    (statement->has_order_by || statement->has_limit))
+{
+    printf("SQL Parser Error: ORDER BY and LIMIT are not supported with aggregate queries yet.\\n");
+    return 0;
 }
 
 /* Optional semicolon */

@@ -766,6 +766,66 @@ int table_record_manager_list(const char *table_name)
 
 
 
+/* Sprint 4 Stage 1: count records matching an optional WHERE expression. */
+int table_record_manager_count(
+    const char *table_name,
+    const char *column,
+    int expression_count,
+    const SQLExpressionToken expression[])
+{
+    if (table_name == NULL || column == NULL ||
+        (!trm_equals_ignore_case(column, "*") &&
+         !trm_equals_ignore_case(column, "ID") &&
+         !trm_equals_ignore_case(column, "VALUE")) ||
+        expression_count < 0 ||
+        expression_count > SQL_MAX_EXPRESSION_TOKENS ||
+        (expression_count > 0 && expression == NULL))
+    {
+        printf("TRM Error: Invalid COUNT arguments.\n");
+        return 0;
+    }
+
+    int table_id;
+    if (!get_table_id(table_name, &table_id))
+        return 0;
+
+    int count = 0;
+    for (int i = 0; i < database.record_count; i++)
+    {
+        TRM_Record *record = &database.records[i];
+        if (record->table_id != table_id)
+            continue;
+
+        if (expression_count > 0)
+        {
+            int matches = trm_evaluate_expression(
+                record, expression_count, expression);
+            if (matches < 0)
+            {
+                printf("TRM Error: Invalid WHERE expression.\n");
+                return 0;
+            }
+            if (!matches)
+                continue;
+        }
+
+        /* This storage format does not currently represent SQL NULL values. */
+        if (trm_equals_ignore_case(column, "*") ||
+            (trm_equals_ignore_case(column, "ID") && record->key[0] != '\0') ||
+            (trm_equals_ignore_case(column, "VALUE") && record->value[0] != '\0'))
+        {
+            count++;
+        }
+    }
+
+    printf("\nCOUNT(%s)\n", column);
+    printf("--------------------\n");
+    printf("%d\n", count);
+    printf("--------------------\n");
+    return 1;
+}
+
+
 int table_record_manager_select(
     const char *table_name,
     int show_key,
