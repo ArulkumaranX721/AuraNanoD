@@ -8,6 +8,7 @@
 #define SQL_MAX_TOKEN_LENGTH 128
 #define SQL_MAX_CONDITIONS 10
 #define SQL_MAX_EXPRESSION_TOKENS 32
+#define SQL_MAX_LIMIT_VALUE 1000000
 
 
 typedef struct
@@ -109,6 +110,13 @@ typedef struct
 
     int expression_count;
     SQLExpressionToken expression[SQL_MAX_EXPRESSION_TOKENS];
+
+    /* Sprint 3: SELECT sorting and row limit. */
+    int has_order_by;
+    char order_by_column[SQL_MAX_TOKEN_LENGTH];
+    int order_desc;
+    int has_limit;
+    int limit;
 
 } SQLStatement;
 

@@ -22,6 +22,16 @@ int table_record_manager_delete(const char *table_name, const char *key);
 int table_record_manager_update_where(const char *table_name, const char *new_value, int expression_count, const SQLExpressionToken expression[]);
 int table_record_manager_delete_where(const char *table_name, int expression_count, const SQLExpressionToken expression[]);
 int table_record_manager_list(const char *table_name);
-int table_record_manager_select(const char *table_name, int show_key, int show_value, int expression_count, const SQLExpressionToken expression[]);
+int table_record_manager_select(
+    const char *table_name,
+    int show_key,
+    int show_value,
+    int expression_count,
+    const SQLExpressionToken expression[],
+    const char *order_by_column,
+    int order_desc,
+    int has_limit,
+    int limit
+);
 
 #endif

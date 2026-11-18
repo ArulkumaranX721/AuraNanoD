@@ -40,6 +40,7 @@ printf("INSERT INTO <table> VALUES ('key', 'value')\n");
 printf("SELECT * FROM <table> - Display table records\n");
 printf("UPDATE <table> SET value = 'new value' WHERE id = 'key';\n");
 printf("DELETE FROM <table> WHERE id = 'key';\n");
+printf("SELECT * FROM <table> ORDER BY id ASC LIMIT 5;\n");
 printf("\nSQL WHERE Features:\n");
 printf("WHERE id = '101'\n");
 printf("WHERE value = 'Database Engineer'\n");
@@ -139,7 +140,11 @@ void execute_sql_command(const char *sql)
     statement.select_key,
     statement.select_value,
     statement.expression_count,
-    statement.expression
+    statement.expression,
+    statement.has_order_by ? statement.order_by_column : NULL,
+    statement.order_desc,
+    statement.has_limit,
+    statement.limit
 );
 
     break;

@@ -771,80 +771,115 @@ int table_record_manager_select(
     int show_key,
     int show_value,
     int expression_count,
-    const SQLExpressionToken expression[])
+    const SQLExpressionToken expression[],
+    const char *order_by_column,
+    int order_desc,
+    int has_limit,
+    int limit)
 {
     if (table_name == NULL ||
         (!show_key && !show_value) ||
         expression_count < 0 ||
         expression_count > SQL_MAX_EXPRESSION_TOKENS ||
-        (expression_count > 0 && expression == NULL))
+        (expression_count > 0 && expression == NULL) ||
+        (order_by_column != NULL &&
+         !trm_equals_ignore_case(order_by_column, "ID") &&
+         !trm_equals_ignore_case(order_by_column, "VALUE")) ||
+        (has_limit && (limit < 0 || limit > SQL_MAX_LIMIT_VALUE)))
     {
         printf("TRM Error: Invalid SELECT arguments.\n");
         return 0;
     }
 
     int table_id;
-
     if (!get_table_id(table_name, &table_id))
     {
         printf("TRM Error: Table not found: %s\n", table_name);
         return 0;
     }
 
-    int found = 0;
-
-    printf("\nTable: %s\n", table_name);
-    printf("----------------------------------------\n");
-
-    if (show_key && show_value)
-        printf("%-20s | %-30s\n", "ID", "VALUE");
-    else if (show_key)
-        printf("%-20s\n", "ID");
-    else
-        printf("%-30s\n", "VALUE");
-
-    printf("----------------------------------------\n");
+    /* Collect matching records first; sorting never changes disk order. */
+    TRM_Record *matches[TRM_MAX_RECORDS];
+    int match_count = 0;
 
     for (int i = 0; i < database.record_count; i++)
     {
         TRM_Record *record = &database.records[i];
-
         if (record->table_id != table_id)
             continue;
 
-        int matches = 1;
-
+        int matches_record = 1;
         if (expression_count > 0)
         {
-            matches = trm_evaluate_expression(
-    record,
-    expression_count,
-    expression
-);
-
-            if (matches == -1)
+            matches_record = trm_evaluate_expression(
+                record, expression_count, expression);
+            if (matches_record == -1)
             {
                 printf("TRM Error: Invalid WHERE expression.\n");
                 return 0;
             }
         }
 
-        if (!matches)
-            continue;
+        if (matches_record && match_count < TRM_MAX_RECORDS)
+            matches[match_count++] = record;
+    }
 
+    /* Stable insertion sort by ID or VALUE. */
+    if (order_by_column != NULL)
+    {
+        for (int i = 1; i < match_count; i++)
+        {
+            TRM_Record *current = matches[i];
+            const char *current_value =
+                trm_equals_ignore_case(order_by_column, "ID")
+                    ? current->key : current->value;
+            int j = i - 1;
+
+            while (j >= 0)
+            {
+                const char *previous_value =
+                    trm_equals_ignore_case(order_by_column, "ID")
+                        ? matches[j]->key : matches[j]->value;
+                int comparison = compare_values(previous_value, current_value);
+                int should_move = order_desc ? comparison < 0 : comparison > 0;
+                if (!should_move)
+                    break;
+                matches[j + 1] = matches[j];
+                j--;
+            }
+            matches[j + 1] = current;
+        }
+    }
+
+    int rows_to_print = match_count;
+    if (has_limit && limit < rows_to_print)
+        rows_to_print = limit;
+
+    printf("\nTable: %s\n", table_name);
+    printf("----------------------------------------\n");
+    if (show_key && show_value)
+        printf("%-20s | %-30s\n", "ID", "VALUE");
+    else if (show_key)
+        printf("%-20s\n", "ID");
+    else
+        printf("%-30s\n", "VALUE");
+    printf("----------------------------------------\n");
+
+    for (int i = 0; i < rows_to_print; i++)
+    {
+        TRM_Record *record = matches[i];
         if (show_key && show_value)
-            printf("%-20s | %-30s\n",
-                   record->key, record->value);
+            printf("%-20s | %-30s\n", record->key, record->value);
         else if (show_key)
             printf("%-20s\n", record->key);
         else
             printf("%-30s\n", record->value);
-
-        found++;
     }
 
     printf("----------------------------------------\n");
-    printf("Total records: %d\n", found);
+    printf("Total records: %d\n", rows_to_print);
+    if (has_limit)
+        printf("Limit applied: %d\n", limit);
 
     return 1;
 }

@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <ctype.h>
+#include <stdlib.h>
 
 #include "SQLParser.h"
 
@@ -607,6 +608,14 @@ if (is_token(tokens, pos, "WHERE"))
     while (pos < tokens->count &&
            !is_token(tokens, pos, ";"))
     {
+        /* ORDER BY and LIMIT begin after a complete WHERE expression. */
+        if (!expecting_operand && depth == 0 &&
+            (is_token(tokens, pos, "ORDER") ||
+             is_token(tokens, pos, "LIMIT")))
+        {
+            break;
+        }
+
         if (statement->expression_count >= SQL_MAX_EXPRESSION_TOKENS)
         {
             printf("SQL Parser Error: Expression limit exceeded.\n");
@@ -820,6 +829,57 @@ if (is_token(tokens, pos, "WHERE"))
     }
 
 } /* End WHERE block */
+
+/* ORDER BY id|value [ASC|DESC] */
+if (is_token(tokens, pos, "ORDER"))
+{
+    if (!is_token(tokens, pos + 1, "BY") || pos + 2 >= tokens->count ||
+        (!is_token(tokens, pos + 2, "ID") &&
+         !is_token(tokens, pos + 2, "VALUE")))
+    {
+        printf("SQL Parser Error: Invalid ORDER BY syntax.\n");
+        return 0;
+    }
+
+    statement->has_order_by = 1;
+    strcpy(statement->order_by_column, tokens->tokens[pos + 2].value);
+    pos += 3;
+
+    if (is_token(tokens, pos, "ASC"))
+    {
+        statement->order_desc = 0;
+        pos++;
+    }
+    else if (is_token(tokens, pos, "DESC"))
+    {
+        statement->order_desc = 1;
+        pos++;
+    }
+}
+
+/* LIMIT <non-negative integer> */
+if (is_token(tokens, pos, "LIMIT"))
+{
+    if (pos + 1 >= tokens->count ||
+        tokens->tokens[pos + 1].type != SQL_TOKEN_NUMBER)
+    {
+        printf("SQL Parser Error: LIMIT requires a non-negative integer.\n");
+        return 0;
+    }
+
+    char *endptr = NULL;
+    long parsed_limit = strtol(tokens->tokens[pos + 1].value, &endptr, 10);
+    if (endptr == tokens->tokens[pos + 1].value || *endptr != '\0' ||
+        parsed_limit > SQL_MAX_LIMIT_VALUE)
+    {
+        printf("SQL Parser Error: LIMIT value is too large.\n");
+        return 0;
+    }
+
+    statement->has_limit = 1;
+    statement->limit = (int)parsed_limit;
+    pos += 2;
+}
 
 /* Optional semicolon */
 if (pos < tokens->count && is_token(tokens, pos, ";"))
