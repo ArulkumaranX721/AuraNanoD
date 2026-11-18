@@ -70,7 +70,11 @@ typedef enum
 typedef enum
 {
     SQL_AGGREGATE_NONE,
-    SQL_AGGREGATE_COUNT
+    SQL_AGGREGATE_COUNT,
+    SQL_AGGREGATE_SUM,
+    SQL_AGGREGATE_AVG,
+    SQL_AGGREGATE_MIN,
+    SQL_AGGREGATE_MAX
 } SQLAggregateType;
 
 typedef struct

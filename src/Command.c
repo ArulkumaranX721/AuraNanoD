@@ -135,14 +135,27 @@ void execute_sql_command(const char *sql)
 
     case SQL_COMMAND_SELECT:
 
-    if (statement.aggregate_type == SQL_AGGREGATE_COUNT)
+    if (statement.aggregate_type != SQL_AGGREGATE_NONE)
     {
-        table_record_manager_count(
-            statement.table_name,
-            statement.aggregate_column,
-            statement.expression_count,
-            statement.expression
-        );
+        if (statement.aggregate_type == SQL_AGGREGATE_COUNT)
+        {
+            table_record_manager_count(
+                statement.table_name,
+                statement.aggregate_column,
+                statement.expression_count,
+                statement.expression
+            );
+        }
+        else
+        {
+            table_record_manager_aggregate(
+                statement.table_name,
+                statement.aggregate_type,
+                statement.aggregate_column,
+                statement.expression_count,
+                statement.expression
+            );
+        }
     }
     else
     {

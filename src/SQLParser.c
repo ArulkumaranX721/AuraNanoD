@@ -513,39 +513,59 @@ if (is_token(tokens, 0, "SELECT"))
     statement->has_second_condition = 0;
 statement->has_or_condition = 0;
 
-    /* Sprint 4: SELECT COUNT(*) or COUNT(column). */
-    if (is_token(tokens, pos, "COUNT"))
+    /* Sprint 4: aggregate functions COUNT, SUM, AVG, MIN and MAX. */
+    if (is_token(tokens, pos, "COUNT") ||
+        is_token(tokens, pos, "SUM") ||
+        is_token(tokens, pos, "AVG") ||
+        is_token(tokens, pos, "MIN") ||
+        is_token(tokens, pos, "MAX"))
     {
-        statement->aggregate_type = SQL_AGGREGATE_COUNT;
+        if (is_token(tokens, pos, "COUNT"))
+            statement->aggregate_type = SQL_AGGREGATE_COUNT;
+        else if (is_token(tokens, pos, "SUM"))
+            statement->aggregate_type = SQL_AGGREGATE_SUM;
+        else if (is_token(tokens, pos, "AVG"))
+            statement->aggregate_type = SQL_AGGREGATE_AVG;
+        else if (is_token(tokens, pos, "MIN"))
+            statement->aggregate_type = SQL_AGGREGATE_MIN;
+        else
+            statement->aggregate_type = SQL_AGGREGATE_MAX;
         pos++;
 
         if (!is_token(tokens, pos, "("))
         {
-            printf("SQL Parser Error: Expected '(' after COUNT.\\n");
+            printf("SQL Parser Error: Expected '(' after aggregate function.\n");
             return 0;
         }
         pos++;
 
-        if (is_token(tokens, pos, "*"))
+        if (statement->aggregate_type == SQL_AGGREGATE_COUNT && is_token(tokens, pos, "*"))
         {
             strcpy(statement->aggregate_column, "*");
             pos++;
         }
-        else if (is_token(tokens, pos, "ID") ||
-                 is_token(tokens, pos, "VALUE"))
+        else if (is_token(tokens, pos, "ID") || is_token(tokens, pos, "VALUE"))
         {
             strcpy(statement->aggregate_column, tokens->tokens[pos].value);
             pos++;
         }
         else
         {
-            printf("SQL Parser Error: COUNT supports *, id, or value.\\n");
+            printf("SQL Parser Error: Aggregate function requires *, id, or value as appropriate.\n");
+            return 0;
+        }
+
+        if ((statement->aggregate_type == SQL_AGGREGATE_SUM ||
+             statement->aggregate_type == SQL_AGGREGATE_AVG) &&
+            !is_token(tokens, pos - 1, "ID"))
+        {
+            printf("SQL Parser Error: SUM and AVG currently support ID only.\n");
             return 0;
         }
 
         if (!is_token(tokens, pos, ")"))
         {
-            printf("SQL Parser Error: Expected ')' after COUNT argument.\\n");
+            printf("SQL Parser Error: Expected ')' after aggregate argument.\n");
             return 0;
         }
         pos++;

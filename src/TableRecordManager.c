@@ -826,6 +826,114 @@ int table_record_manager_count(
 }
 
 
+/* Sprint 4 Stage 2: SUM, AVG, MIN and MAX (COUNT remains supported). */
+int table_record_manager_aggregate(
+    const char *table_name,
+    SQLAggregateType aggregate_type,
+    const char *column,
+    int expression_count,
+    const SQLExpressionToken expression[])
+{
+    if (table_name == NULL || column == NULL ||
+        (!trm_equals_ignore_case(column, "ID") &&
+         !trm_equals_ignore_case(column, "VALUE")) ||
+        aggregate_type < SQL_AGGREGATE_COUNT || aggregate_type > SQL_AGGREGATE_MAX ||
+        expression_count < 0 || expression_count > SQL_MAX_EXPRESSION_TOKENS ||
+        (expression_count > 0 && expression == NULL))
+    {
+        printf("TRM Error: Invalid aggregate arguments.\n");
+        return 0;
+    }
+
+    if ((aggregate_type == SQL_AGGREGATE_SUM || aggregate_type == SQL_AGGREGATE_AVG) &&
+        !trm_equals_ignore_case(column, "ID"))
+    {
+        printf("TRM Error: SUM and AVG currently support numeric ID values only.\n");
+        return 0;
+    }
+
+    int table_id;
+    if (!get_table_id(table_name, &table_id))
+        return 0;
+
+    int count = 0;
+    double sum = 0.0;
+    const char *extreme = NULL;
+
+    for (int i = 0; i < database.record_count; i++)
+    {
+        TRM_Record *record = &database.records[i];
+        if (record->table_id != table_id)
+            continue;
+
+        if (expression_count > 0)
+        {
+            int matches = trm_evaluate_expression(record, expression_count, expression);
+            if (matches < 0)
+            {
+                printf("TRM Error: Invalid WHERE expression.\n");
+                return 0;
+            }
+            if (!matches)
+                continue;
+        }
+
+        const char *value = trm_equals_ignore_case(column, "ID") ? record->key : record->value;
+        if (value[0] == '\0')
+            continue;
+
+        if (aggregate_type == SQL_AGGREGATE_SUM || aggregate_type == SQL_AGGREGATE_AVG)
+        {
+            char *endptr = NULL;
+            double numeric = strtod(value, &endptr);
+            if (endptr == value || *endptr != '\0')
+            {
+                printf("TRM Error: Non-numeric value '%s' found in ID column.\n", value);
+                return 0;
+            }
+            sum += numeric;
+        }
+        else if (extreme == NULL)
+        {
+            extreme = value;
+        }
+        else
+        {
+            int cmp = compare_values(value, extreme);
+            if ((aggregate_type == SQL_AGGREGATE_MIN && cmp < 0) ||
+                (aggregate_type == SQL_AGGREGATE_MAX && cmp > 0))
+                extreme = value;
+        }
+        count++;
+    }
+
+    if (aggregate_type == SQL_AGGREGATE_SUM)
+    {
+        printf("\nSUM(%s)\n--------------------\n%.10g\n--------------------\n", column, sum);
+    }
+    else if (aggregate_type == SQL_AGGREGATE_AVG)
+    {
+        if (count == 0)
+        {
+            printf("\nAVG(%s)\n--------------------\nNULL (no matching rows)\n--------------------\n", column);
+        }
+        else
+        {
+            printf("\nAVG(%s)\n--------------------\n%.10g\n--------------------\n", column, sum / count);
+        }
+    }
+    else if (aggregate_type == SQL_AGGREGATE_MIN)
+    {
+        printf("\nMIN(%s)\n--------------------\n%s\n--------------------\n", column, extreme ? extreme : "NULL (no matching rows)");
+    }
+    else if (aggregate_type == SQL_AGGREGATE_MAX)
+    {
+        printf("\nMAX(%s)\n--------------------\n%s\n--------------------\n", column, extreme ? extreme : "NULL (no matching rows)");
+    }
+    return 1;
+}
+
+
 int table_record_manager_select(
     const char *table_name,
     int show_key,
