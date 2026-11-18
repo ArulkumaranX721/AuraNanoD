@@ -41,6 +41,8 @@ printf("SELECT * FROM <table> - Display table records\n");
 printf("UPDATE <table> SET value = 'new value' WHERE id = 'key';\n");
 printf("DELETE FROM <table> WHERE id = 'key';\n");
 printf("SELECT * FROM <table> ORDER BY id ASC LIMIT 5;\n");
+printf("SELECT id, COUNT(*) FROM <table> GROUP BY id;\n");
+printf("SELECT value, COUNT(*) FROM <table> GROUP BY value;\n");
 printf("\nSQL WHERE Features:\n");
 printf("WHERE id = '101'\n");
 printf("WHERE value = 'Database Engineer'\n");
@@ -135,7 +137,18 @@ void execute_sql_command(const char *sql)
 
     case SQL_COMMAND_SELECT:
 
-    if (statement.aggregate_type != SQL_AGGREGATE_NONE)
+    if (statement.has_group_by)
+    {
+        table_record_manager_group_by(
+            statement.table_name,
+            statement.group_by_column,
+            statement.aggregate_type,
+            statement.aggregate_column,
+            statement.expression_count,
+            statement.expression
+        );
+    }
+    else if (statement.aggregate_type != SQL_AGGREGATE_NONE)
     {
         if (statement.aggregate_type == SQL_AGGREGATE_COUNT)
         {

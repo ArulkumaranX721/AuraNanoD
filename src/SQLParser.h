@@ -109,6 +109,10 @@ typedef struct
     /* Sprint 4: aggregate query support. */
     SQLAggregateType aggregate_type;
     char aggregate_column[SQL_MAX_TOKEN_LENGTH];
+
+    /* Sprint 5: GROUP BY support for ID and VALUE. */
+    int has_group_by;
+    char group_by_column[SQL_MAX_TOKEN_LENGTH];
 } SQLStatement;
 
 int sql_parse(const SQLTokenList *tokens, SQLStatement *statement);

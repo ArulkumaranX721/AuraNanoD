@@ -934,6 +934,185 @@ int table_record_manager_aggregate(
 }
 
 
+/* Sprint 5 Stage 1: GROUP BY on the existing ID and VALUE columns. */
+int table_record_manager_group_by(
+    const char *table_name,
+    const char *group_column,
+    SQLAggregateType aggregate_type,
+    const char *aggregate_column,
+    int expression_count,
+    const SQLExpressionToken expression[])
+{
+    typedef struct
+    {
+        char group_value[RM_MAX_VALUE_SIZE];
+        int count;
+        double sum;
+        const char *extreme;
+    } TRM_Group;
+
+    TRM_Group groups[TRM_MAX_RECORDS];
+    int group_count = 0;
+
+    if (table_name == NULL || group_column == NULL || aggregate_column == NULL ||
+        (!trm_equals_ignore_case(group_column, "ID") &&
+         !trm_equals_ignore_case(group_column, "VALUE")) ||
+        (aggregate_type < SQL_AGGREGATE_COUNT || aggregate_type > SQL_AGGREGATE_MAX) ||
+        (strcmp(aggregate_column, "*") != 0 &&
+         !trm_equals_ignore_case(aggregate_column, "ID") &&
+         !trm_equals_ignore_case(aggregate_column, "VALUE")) ||
+        expression_count < 0 || expression_count > SQL_MAX_EXPRESSION_TOKENS ||
+        (expression_count > 0 && expression == NULL))
+    {
+        printf("TRM Error: Invalid GROUP BY arguments.\n");
+        return 0;
+    }
+
+    if ((aggregate_type == SQL_AGGREGATE_SUM || aggregate_type == SQL_AGGREGATE_AVG) &&
+        !trm_equals_ignore_case(aggregate_column, "ID"))
+    {
+        printf("TRM Error: SUM and AVG currently support numeric ID values only.\n");
+        return 0;
+    }
+
+    int table_id;
+    if (!get_table_id(table_name, &table_id))
+        return 0;
+
+    memset(groups, 0, sizeof(groups));
+
+    for (int i = 0; i < database.record_count; i++)
+    {
+        TRM_Record *record = &database.records[i];
+        if (record->table_id != table_id)
+            continue;
+
+        if (expression_count > 0)
+        {
+            int matches = trm_evaluate_expression(record, expression_count, expression);
+            if (matches < 0)
+            {
+                printf("TRM Error: Invalid WHERE expression.\n");
+                return 0;
+            }
+            if (!matches)
+                continue;
+        }
+
+        const char *group_value = trm_equals_ignore_case(group_column, "ID")
+                                      ? record->key : record->value;
+        if (group_value[0] == '\0')
+            continue;
+
+        int group_index = -1;
+        for (int g = 0; g < group_count; g++)
+        {
+            if (strcmp(groups[g].group_value, group_value) == 0)
+            {
+                group_index = g;
+                break;
+            }
+        }
+
+        if (group_index < 0)
+        {
+            if (group_count >= TRM_MAX_RECORDS)
+            {
+                printf("TRM Error: GROUP BY group limit exceeded.\n");
+                return 0;
+            }
+            group_index = group_count++;
+            strncpy(groups[group_index].group_value, group_value,
+                    sizeof(groups[group_index].group_value) - 1);
+        }
+
+        TRM_Group *group = &groups[group_index];
+        const char *aggregate_value = NULL;
+        if (strcmp(aggregate_column, "*") != 0)
+            aggregate_value = trm_equals_ignore_case(aggregate_column, "ID")
+                                  ? record->key : record->value;
+
+        if (aggregate_type == SQL_AGGREGATE_COUNT)
+        {
+            if (strcmp(aggregate_column, "*") == 0 ||
+                (aggregate_value != NULL && aggregate_value[0] != '\0'))
+                group->count++;
+        }
+        else if (aggregate_value != NULL && aggregate_value[0] != '\0')
+        {
+            if (aggregate_type == SQL_AGGREGATE_SUM || aggregate_type == SQL_AGGREGATE_AVG)
+            {
+                char *endptr = NULL;
+                double numeric = strtod(aggregate_value, &endptr);
+                if (endptr == aggregate_value || *endptr != '\0')
+                {
+                    printf("TRM Error: Non-numeric value '%s' found in ID column.\n", aggregate_value);
+                    return 0;
+                }
+                group->sum += numeric;
+                group->count++;
+            }
+            else
+            {
+                if (group->extreme == NULL)
+                    group->extreme = aggregate_value;
+                else
+                {
+                    int cmp = compare_values(aggregate_value, group->extreme);
+                    if ((aggregate_type == SQL_AGGREGATE_MIN && cmp < 0) ||
+                        (aggregate_type == SQL_AGGREGATE_MAX && cmp > 0))
+                        group->extreme = aggregate_value;
+                }
+                group->count++;
+            }
+        }
+    }
+
+    const char *function_name = "COUNT";
+    switch (aggregate_type)
+    {
+        case SQL_AGGREGATE_COUNT: function_name = "COUNT"; break;
+        case SQL_AGGREGATE_SUM: function_name = "SUM"; break;
+        case SQL_AGGREGATE_AVG: function_name = "AVG"; break;
+        case SQL_AGGREGATE_MIN: function_name = "MIN"; break;
+        case SQL_AGGREGATE_MAX: function_name = "MAX"; break;
+        default: break;
+    }
+
+    printf("\n%s\t%s(%s)\n", group_column, function_name, aggregate_column);
+    printf("----------------------------------------\n");
+
+    for (int g = 0; g < group_count; g++)
+    {
+        TRM_Group *group = &groups[g];
+        printf("%s\t", group->group_value);
+        switch (aggregate_type)
+        {
+            case SQL_AGGREGATE_COUNT:
+                printf("%d", group->count);
+                break;
+            case SQL_AGGREGATE_SUM:
+                printf("%.10g", group->sum);
+                break;
+            case SQL_AGGREGATE_AVG:
+                if (group->count == 0) printf("NULL");
+                else printf("%.10g", group->sum / group->count);
+                break;
+            case SQL_AGGREGATE_MIN:
+            case SQL_AGGREGATE_MAX:
+                printf("%s", group->extreme ? group->extreme : "NULL");
+                break;
+            default:
+                printf("NULL");
+                break;
+        }
+        printf("\n");
+    }
+    printf("----------------------------------------\n");
+    return 1;
+}
+
+
 int table_record_manager_select(
     const char *table_name,
     int show_key,
