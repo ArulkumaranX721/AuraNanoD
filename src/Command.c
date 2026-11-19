@@ -43,6 +43,9 @@ printf("DELETE FROM <table> WHERE id = 'key';\n");
 printf("SELECT * FROM <table> ORDER BY id ASC LIMIT 5;\n");
 printf("SELECT id, COUNT(*) FROM <table> GROUP BY id;\n");
 printf("SELECT value, COUNT(*) FROM <table> GROUP BY value;\n");
+printf("SELECT value, AVG(id) FROM <table> GROUP BY value;\n");
+printf("SELECT value, MIN(id) FROM <table> GROUP BY value ORDER BY value ASC;\n");
+printf("SELECT value, MAX(id) FROM <table> GROUP BY value ORDER BY value DESC;\n");
 printf("\nSQL WHERE Features:\n");
 printf("WHERE id = '101'\n");
 printf("WHERE value = 'Database Engineer'\n");
@@ -145,7 +148,9 @@ void execute_sql_command(const char *sql)
             statement.aggregate_type,
             statement.aggregate_column,
             statement.expression_count,
-            statement.expression
+            statement.expression,
+            statement.has_order_by ? statement.order_by_column : NULL,
+            statement.order_desc
         );
     }
     else if (statement.aggregate_type != SQL_AGGREGATE_NONE)

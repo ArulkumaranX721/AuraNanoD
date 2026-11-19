@@ -986,6 +986,14 @@ if (is_token(tokens, pos, "ORDER"))
     }
 }
 
+/* Grouped ORDER BY currently sorts by the GROUP BY column. */
+if (statement->has_group_by && statement->has_order_by &&
+    strcmp(statement->order_by_column, statement->group_by_column) != 0)
+{
+    printf("SQL Parser Error: GROUP BY ORDER BY must use the grouping column in this version.\n");
+    return 0;
+}
+
 /* LIMIT <non-negative integer> */
 if (is_token(tokens, pos, "LIMIT"))
 {
@@ -1012,9 +1020,10 @@ if (is_token(tokens, pos, "LIMIT"))
 
 /* Aggregate output is one summary row; sorting/limiting is not supported yet. */
 if (statement->aggregate_type != SQL_AGGREGATE_NONE &&
+    !statement->has_group_by &&
     (statement->has_order_by || statement->has_limit))
 {
-    printf("SQL Parser Error: ORDER BY and LIMIT are not supported with aggregate queries yet.\\n");
+    printf("SQL Parser Error: ORDER BY and LIMIT are not supported with scalar aggregate queries yet.\\n");
     return 0;
 }
 

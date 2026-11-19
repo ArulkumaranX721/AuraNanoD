@@ -941,7 +941,9 @@ int table_record_manager_group_by(
     SQLAggregateType aggregate_type,
     const char *aggregate_column,
     int expression_count,
-    const SQLExpressionToken expression[])
+    const SQLExpressionToken expression[],
+    const char *order_by_column,
+    int order_desc)
 {
     typedef struct
     {
@@ -958,6 +960,7 @@ int table_record_manager_group_by(
         (!trm_equals_ignore_case(group_column, "ID") &&
          !trm_equals_ignore_case(group_column, "VALUE")) ||
         (aggregate_type < SQL_AGGREGATE_COUNT || aggregate_type > SQL_AGGREGATE_MAX) ||
+        (order_by_column != NULL && !trm_equals_ignore_case(order_by_column, group_column)) ||
         (strcmp(aggregate_column, "*") != 0 &&
          !trm_equals_ignore_case(aggregate_column, "ID") &&
          !trm_equals_ignore_case(aggregate_column, "VALUE")) ||
@@ -1065,6 +1068,25 @@ int table_record_manager_group_by(
                 }
                 group->count++;
             }
+        }
+    }
+
+    /* Sort grouped rows by their grouping key when ORDER BY is requested. */
+    if (order_by_column != NULL)
+    {
+        for (int i = 1; i < group_count; i++)
+        {
+            TRM_Group current = groups[i];
+            int j = i - 1;
+            while (j >= 0)
+            {
+                int cmp = compare_values(groups[j].group_value, current.group_value);
+                int should_move = order_desc ? (cmp < 0) : (cmp > 0);
+                if (!should_move) break;
+                groups[j + 1] = groups[j];
+                j--;
+            }
+            groups[j + 1] = current;
         }
     }
 
