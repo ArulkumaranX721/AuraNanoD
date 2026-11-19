@@ -144,7 +144,8 @@ void execute_sql_command(const char *sql)
     {
         table_record_manager_group_by(
             statement.table_name,
-            statement.group_by_column,
+            statement.group_by_columns,
+            statement.group_by_count,
             statement.aggregate_type,
             statement.aggregate_column,
             statement.expression_count,

@@ -7,6 +7,7 @@
 #define SQL_MAX_CONDITIONS 10
 #define SQL_MAX_EXPRESSION_TOKENS 32
 #define SQL_MAX_LIMIT_VALUE 1000000
+#define SQL_MAX_GROUP_COLUMNS 2
 
 typedef struct
 {
@@ -110,9 +111,11 @@ typedef struct
     SQLAggregateType aggregate_type;
     char aggregate_column[SQL_MAX_TOKEN_LENGTH];
 
-    /* Sprint 5: GROUP BY support for ID and VALUE. */
+    /* Sprint 5: GROUP BY support for ID, VALUE, or both. */
     int has_group_by;
-    char group_by_column[SQL_MAX_TOKEN_LENGTH];
+    char group_by_column[SQL_MAX_TOKEN_LENGTH]; /* Legacy first grouping column. */
+    int group_by_count;
+    char group_by_columns[SQL_MAX_GROUP_COLUMNS][SQL_MAX_TOKEN_LENGTH];
 } SQLStatement;
 
 int sql_parse(const SQLTokenList *tokens, SQLStatement *statement);

@@ -24,7 +24,8 @@ int table_record_manager_delete_where(const char *table_name, int expression_cou
 int table_record_manager_list(const char *table_name);
 int table_record_manager_count(const char *table_name, const char *column, int expression_count, const SQLExpressionToken expression[]);
 int table_record_manager_aggregate(const char *table_name, SQLAggregateType aggregate_type, const char *column, int expression_count, const SQLExpressionToken expression[]);
-int table_record_manager_group_by(const char *table_name, const char *group_column,
+int table_record_manager_group_by(const char *table_name,
+    char group_columns[][SQL_MAX_TOKEN_LENGTH], int group_column_count,
     SQLAggregateType aggregate_type, const char *aggregate_column,
     int expression_count, const SQLExpressionToken expression[],
     const char *order_by_column, int order_desc);

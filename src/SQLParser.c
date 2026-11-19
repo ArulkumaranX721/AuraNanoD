@@ -514,151 +514,132 @@ if (is_token(tokens, 0, "SELECT"))
     statement->aggregate_column[0] = '\0';
     statement->has_group_by = 0;
     statement->group_by_column[0] = '\0';
+    statement->group_by_count = 0;
+    memset(statement->group_by_columns, 0, sizeof(statement->group_by_columns));
     statement->has_second_condition = 0;
 statement->has_or_condition = 0;
 
-    /* Sprint 4/5: aggregate and grouped SELECT forms. */
-    if (is_token(tokens, pos, "COUNT") ||
-        is_token(tokens, pos, "SUM") ||
-        is_token(tokens, pos, "AVG") ||
-        is_token(tokens, pos, "MIN") ||
-        is_token(tokens, pos, "MAX"))
-    {
-        if (is_token(tokens, pos, "COUNT"))
-            statement->aggregate_type = SQL_AGGREGATE_COUNT;
-        else if (is_token(tokens, pos, "SUM"))
-            statement->aggregate_type = SQL_AGGREGATE_SUM;
-        else if (is_token(tokens, pos, "AVG"))
-            statement->aggregate_type = SQL_AGGREGATE_AVG;
-        else if (is_token(tokens, pos, "MIN"))
-            statement->aggregate_type = SQL_AGGREGATE_MIN;
-        else
-            statement->aggregate_type = SQL_AGGREGATE_MAX;
-        pos++;
-
-        if (!is_token(tokens, pos, "("))
-        {
-            printf("SQL Parser Error: Expected '(' after aggregate function.\n");
-            return 0;
-        }
-        pos++;
-
-        if (statement->aggregate_type == SQL_AGGREGATE_COUNT && is_token(tokens, pos, "*"))
-        {
-            strcpy(statement->aggregate_column, "*");
-            pos++;
-        }
-        else if (is_token(tokens, pos, "ID") || is_token(tokens, pos, "VALUE"))
-        {
-            strcpy(statement->aggregate_column, tokens->tokens[pos].value);
-            pos++;
-        }
-        else
-        {
-            printf("SQL Parser Error: Aggregate function requires *, id, or value as appropriate.\n");
-            return 0;
-        }
-
-        if ((statement->aggregate_type == SQL_AGGREGATE_SUM ||
-             statement->aggregate_type == SQL_AGGREGATE_AVG) &&
-            !is_token(tokens, pos - 1, "ID"))
-        {
-            printf("SQL Parser Error: SUM and AVG currently support ID only.\n");
-            return 0;
-        }
-
-        if (!is_token(tokens, pos, ")"))
-        {
-            printf("SQL Parser Error: Expected ')' after aggregate argument.\n");
-            return 0;
-        }
-        pos++;
-    }
-    else if (is_token(tokens, pos, "*"))
+    /* Sprint 4/5: SELECT projection, optional grouping columns and aggregate. */
+    if (is_token(tokens, pos, "*"))
     {
         statement->select_key = 1;
         statement->select_value = 1;
         pos++;
     }
+    else if (is_token(tokens, pos, "COUNT") || is_token(tokens, pos, "SUM") ||
+             is_token(tokens, pos, "AVG") || is_token(tokens, pos, "MIN") ||
+             is_token(tokens, pos, "MAX"))
+    {
+        /* Scalar aggregate: SELECT COUNT(*) FROM ... */
+        if (is_token(tokens, pos, "COUNT")) statement->aggregate_type = SQL_AGGREGATE_COUNT;
+        else if (is_token(tokens, pos, "SUM")) statement->aggregate_type = SQL_AGGREGATE_SUM;
+        else if (is_token(tokens, pos, "AVG")) statement->aggregate_type = SQL_AGGREGATE_AVG;
+        else if (is_token(tokens, pos, "MIN")) statement->aggregate_type = SQL_AGGREGATE_MIN;
+        else statement->aggregate_type = SQL_AGGREGATE_MAX;
+        pos++;
+        if (!is_token(tokens, pos++, "("))
+        {
+            printf("SQL Parser Error: Expected '(' after aggregate function.\n");
+            return 0;
+        }
+        if (statement->aggregate_type == SQL_AGGREGATE_COUNT && is_token(tokens, pos, "*"))
+            strcpy(statement->aggregate_column, "*");
+        else if (is_token(tokens, pos, "ID") || is_token(tokens, pos, "VALUE"))
+            strcpy(statement->aggregate_column, tokens->tokens[pos].value);
+        else
+        {
+            printf("SQL Parser Error: Invalid aggregate argument.\n");
+            return 0;
+        }
+        if ((statement->aggregate_type == SQL_AGGREGATE_SUM || statement->aggregate_type == SQL_AGGREGATE_AVG) &&
+            !is_token(tokens, pos, "ID"))
+        {
+            printf("SQL Parser Error: SUM and AVG currently support ID only.\n");
+            return 0;
+        }
+        pos++;
+        if (!is_token(tokens, pos++, ")"))
+        {
+            printf("SQL Parser Error: Expected ')' after aggregate argument.\n");
+            return 0;
+        }
+    }
     else if (is_token(tokens, pos, "ID") || is_token(tokens, pos, "VALUE"))
     {
-        /* First selected column. */
-        if (is_token(tokens, pos, "ID"))
-            statement->select_key = 1;
-        else
-            statement->select_value = 1;
-        pos++;
-
-        /* A grouped query has: SELECT group_column, AGGREGATE(...). */
-        if (is_token(tokens, pos, ",") &&
-            (is_token(tokens, pos + 1, "COUNT") ||
-             is_token(tokens, pos + 1, "SUM") ||
-             is_token(tokens, pos + 1, "AVG") ||
-             is_token(tokens, pos + 1, "MIN") ||
-             is_token(tokens, pos + 1, "MAX")))
+        /* Parse ID and/or VALUE, optionally followed by an aggregate. */
+        while (is_token(tokens, pos, "ID") || is_token(tokens, pos, "VALUE"))
         {
-            pos++; /* comma */
-            if (is_token(tokens, pos, "COUNT"))
-                statement->aggregate_type = SQL_AGGREGATE_COUNT;
-            else if (is_token(tokens, pos, "SUM"))
-                statement->aggregate_type = SQL_AGGREGATE_SUM;
-            else if (is_token(tokens, pos, "AVG"))
-                statement->aggregate_type = SQL_AGGREGATE_AVG;
-            else if (is_token(tokens, pos, "MIN"))
-                statement->aggregate_type = SQL_AGGREGATE_MIN;
+            if (is_token(tokens, pos, "ID"))
+            {
+                if (statement->select_key)
+                {
+                    printf("SQL Parser Error: Duplicate SELECT column.\n");
+                    return 0;
+                }
+                statement->select_key = 1;
+            }
             else
-                statement->aggregate_type = SQL_AGGREGATE_MAX;
+            {
+                if (statement->select_value)
+                {
+                    printf("SQL Parser Error: Duplicate SELECT column.\n");
+                    return 0;
+                }
+                statement->select_value = 1;
+            }
             pos++;
+            if (!is_token(tokens, pos, ",")) break;
+            pos++;
+            if (!(is_token(tokens, pos, "ID") || is_token(tokens, pos, "VALUE") ||
+                  is_token(tokens, pos, "COUNT") || is_token(tokens, pos, "SUM") ||
+                  is_token(tokens, pos, "AVG") || is_token(tokens, pos, "MIN") ||
+                  is_token(tokens, pos, "MAX")))
+            {
+                printf("SQL Parser Error: Invalid SELECT column list.\n");
+                return 0;
+            }
+            if (is_token(tokens, pos, "COUNT") || is_token(tokens, pos, "SUM") ||
+                is_token(tokens, pos, "AVG") || is_token(tokens, pos, "MIN") ||
+                is_token(tokens, pos, "MAX"))
+                break;
+        }
 
-            if (!is_token(tokens, pos, "("))
+        if (is_token(tokens, pos, "COUNT") || is_token(tokens, pos, "SUM") ||
+            is_token(tokens, pos, "AVG") || is_token(tokens, pos, "MIN") ||
+            is_token(tokens, pos, "MAX"))
+        {
+            if (is_token(tokens, pos, "COUNT")) statement->aggregate_type = SQL_AGGREGATE_COUNT;
+            else if (is_token(tokens, pos, "SUM")) statement->aggregate_type = SQL_AGGREGATE_SUM;
+            else if (is_token(tokens, pos, "AVG")) statement->aggregate_type = SQL_AGGREGATE_AVG;
+            else if (is_token(tokens, pos, "MIN")) statement->aggregate_type = SQL_AGGREGATE_MIN;
+            else statement->aggregate_type = SQL_AGGREGATE_MAX;
+            pos++;
+            if (!is_token(tokens, pos++, "("))
             {
                 printf("SQL Parser Error: Expected '(' after aggregate function.\n");
                 return 0;
             }
-            pos++;
             if (statement->aggregate_type == SQL_AGGREGATE_COUNT && is_token(tokens, pos, "*"))
-            {
                 strcpy(statement->aggregate_column, "*");
-                pos++;
-            }
             else if (is_token(tokens, pos, "ID") || is_token(tokens, pos, "VALUE"))
-            {
                 strcpy(statement->aggregate_column, tokens->tokens[pos].value);
-                pos++;
-            }
             else
             {
                 printf("SQL Parser Error: Invalid aggregate argument.\n");
                 return 0;
             }
-            if ((statement->aggregate_type == SQL_AGGREGATE_SUM ||
-                 statement->aggregate_type == SQL_AGGREGATE_AVG) &&
-                !is_token(tokens, pos - 1, "ID"))
+            if ((statement->aggregate_type == SQL_AGGREGATE_SUM || statement->aggregate_type == SQL_AGGREGATE_AVG) &&
+                !is_token(tokens, pos, "ID"))
             {
                 printf("SQL Parser Error: SUM and AVG currently support ID only.\n");
                 return 0;
             }
-            if (!is_token(tokens, pos, ")"))
+            pos++;
+            if (!is_token(tokens, pos++, ")"))
             {
                 printf("SQL Parser Error: Expected ')' after aggregate argument.\n");
                 return 0;
             }
-            pos++;
-        }
-        else if (is_token(tokens, pos, ","))
-        {
-            /* Existing non-aggregate two-column SELECT. */
-            pos++;
-            if (is_token(tokens, pos, "ID") && !statement->select_key)
-                statement->select_key = 1;
-            else if (is_token(tokens, pos, "VALUE") && !statement->select_value)
-                statement->select_value = 1;
-            else
-            {
-                printf("SQL Parser Error: Invalid or duplicate SELECT column.\n");
-                return 0;
-            }
-            pos++;
         }
     }
     else
@@ -924,38 +905,61 @@ if (is_token(tokens, pos, "WHERE"))
 
 } /* End WHERE block */
 
-/* GROUP BY id|value */
+/* GROUP BY id[, value] */
 if (is_token(tokens, pos, "GROUP"))
 {
-    if (!is_token(tokens, pos + 1, "BY") || pos + 2 >= tokens->count ||
-        (!is_token(tokens, pos + 2, "ID") &&
-         !is_token(tokens, pos + 2, "VALUE")))
+    if (!is_token(tokens, pos + 1, "BY") || statement->aggregate_type == SQL_AGGREGATE_NONE)
     {
-        printf("SQL Parser Error: Invalid GROUP BY syntax.\n");
+        printf("SQL Parser Error: Invalid GROUP BY syntax or missing aggregate.\n");
         return 0;
     }
-
-    if (statement->aggregate_type == SQL_AGGREGATE_NONE)
+    pos += 2;
+    while (1)
     {
-        printf("SQL Parser Error: GROUP BY requires an aggregate function in this version.\n");
-        return 0;
+        if (statement->group_by_count >= SQL_MAX_GROUP_COLUMNS ||
+            (!is_token(tokens, pos, "ID") && !is_token(tokens, pos, "VALUE")))
+        {
+            printf("SQL Parser Error: GROUP BY supports ID and VALUE only, at most two columns.\n");
+            return 0;
+        }
+        const char *column = tokens->tokens[pos].value;
+        for (int i = 0; i < statement->group_by_count; i++)
+        {
+            if (is_token(tokens, pos, statement->group_by_columns[i]))
+            {
+                printf("SQL Parser Error: Duplicate GROUP BY column.\n");
+                return 0;
+            }
+        }
+        strcpy(statement->group_by_columns[statement->group_by_count++], column);
+        pos++;
+        if (!is_token(tokens, pos, ",")) break;
+        pos++;
     }
-
-    strcpy(statement->group_by_column, tokens->tokens[pos + 2].value);
     statement->has_group_by = 1;
-    pos += 3;
+    strcpy(statement->group_by_column, statement->group_by_columns[0]);
 
-    if ((is_token(tokens, 1, "ID") && !is_token(tokens, pos - 1, "ID")) ||
-        (is_token(tokens, 1, "VALUE") && !is_token(tokens, pos - 1, "VALUE")))
+    if (statement->select_key != (statement->group_by_count == 2 ||
+        is_token(tokens, 1, "ID")) ||
+        statement->select_value != (statement->group_by_count == 2 ||
+        is_token(tokens, 1, "VALUE")))
     {
-        printf("SQL Parser Error: SELECT column must match GROUP BY column.\n");
+        printf("SQL Parser Error: SELECT columns must match GROUP BY columns.\n");
+        return 0;
+    }
+    /* Keep displayed grouping columns in the same order as the SELECT list. */
+    if (strcmp(statement->group_by_columns[0], tokens->tokens[1].value) != 0 ||
+        (statement->group_by_count == 2 &&
+         strcmp(statement->group_by_columns[1], tokens->tokens[3].value) != 0))
+    {
+        printf("SQL Parser Error: GROUP BY columns must follow the SELECT column order in this version.\n");
         return 0;
     }
 }
 else if (statement->aggregate_type != SQL_AGGREGATE_NONE &&
          (statement->select_key || statement->select_value))
 {
-    printf("SQL Parser Error: Grouping column requires GROUP BY.\n");
+    printf("SQL Parser Error: Grouping columns require GROUP BY.\n");
     return 0;
 }
 
@@ -987,11 +991,25 @@ if (is_token(tokens, pos, "ORDER"))
 }
 
 /* Grouped ORDER BY currently sorts by the GROUP BY column. */
-if (statement->has_group_by && statement->has_order_by &&
-    strcmp(statement->order_by_column, statement->group_by_column) != 0)
+if (statement->has_group_by && statement->has_order_by)
 {
-    printf("SQL Parser Error: GROUP BY ORDER BY must use the grouping column in this version.\n");
-    return 0;
+    int order_column_is_grouped = 0;
+    for (int i = 0; i < statement->group_by_count; i++)
+    {
+        if (strlen(statement->order_by_column) == strlen(statement->group_by_columns[i]))
+        {
+            int same = 1;
+            for (size_t j = 0; j < strlen(statement->order_by_column); j++)
+                if (toupper((unsigned char)statement->order_by_column[j]) !=
+                    toupper((unsigned char)statement->group_by_columns[i][j])) same = 0;
+            if (same) order_column_is_grouped = 1;
+        }
+    }
+    if (!order_column_is_grouped)
+    {
+        printf("SQL Parser Error: ORDER BY must use a GROUP BY column.\n");
+        return 0;
+    }
 }
 
 /* LIMIT <non-negative integer> */

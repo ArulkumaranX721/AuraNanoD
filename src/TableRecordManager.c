@@ -934,10 +934,11 @@ int table_record_manager_aggregate(
 }
 
 
-/* Sprint 5 Stage 1: GROUP BY on the existing ID and VALUE columns. */
+/* Sprint 5 Stage 3: GROUP BY on ID, VALUE, or both columns. */
 int table_record_manager_group_by(
     const char *table_name,
-    const char *group_column,
+    char group_columns[][SQL_MAX_TOKEN_LENGTH],
+    int group_column_count,
     SQLAggregateType aggregate_type,
     const char *aggregate_column,
     int expression_count,
@@ -947,7 +948,8 @@ int table_record_manager_group_by(
 {
     typedef struct
     {
-        char group_value[RM_MAX_VALUE_SIZE];
+        char key[RM_MAX_KEY_SIZE];
+        char value[RM_MAX_VALUE_SIZE];
         int count;
         double sum;
         const char *extreme;
@@ -956,21 +958,50 @@ int table_record_manager_group_by(
     TRM_Group groups[TRM_MAX_RECORDS];
     int group_count = 0;
 
-    if (table_name == NULL || group_column == NULL || aggregate_column == NULL ||
-        (!trm_equals_ignore_case(group_column, "ID") &&
-         !trm_equals_ignore_case(group_column, "VALUE")) ||
+    if (table_name == NULL || group_columns == NULL || aggregate_column == NULL ||
+        group_column_count < 1 || group_column_count > 2 ||
         (aggregate_type < SQL_AGGREGATE_COUNT || aggregate_type > SQL_AGGREGATE_MAX) ||
-        (order_by_column != NULL && !trm_equals_ignore_case(order_by_column, group_column)) ||
-        (strcmp(aggregate_column, "*") != 0 &&
-         !trm_equals_ignore_case(aggregate_column, "ID") &&
-         !trm_equals_ignore_case(aggregate_column, "VALUE")) ||
-        expression_count < 0 || expression_count > SQL_MAX_EXPRESSION_TOKENS ||
+        (expression_count < 0 || expression_count > SQL_MAX_EXPRESSION_TOKENS) ||
         (expression_count > 0 && expression == NULL))
     {
         printf("TRM Error: Invalid GROUP BY arguments.\n");
         return 0;
     }
 
+    int has_id = 0, has_value = 0;
+    for (int c = 0; c < group_column_count; c++)
+    {
+        if (trm_equals_ignore_case(group_columns[c], "ID")) has_id = 1;
+        else if (trm_equals_ignore_case(group_columns[c], "VALUE")) has_value = 1;
+        else
+        {
+            printf("TRM Error: GROUP BY supports ID and VALUE only.\n");
+            return 0;
+        }
+    }
+    if ((group_column_count == 2 && (!has_id || !has_value)) ||
+        (group_column_count == 1 && has_id == has_value))
+    {
+        printf("TRM Error: Invalid or duplicate GROUP BY columns.\n");
+        return 0;
+    }
+    if (order_by_column != NULL)
+    {
+        int allowed = (has_id && trm_equals_ignore_case(order_by_column, "ID")) ||
+                      (has_value && trm_equals_ignore_case(order_by_column, "VALUE"));
+        if (!allowed)
+        {
+            printf("TRM Error: ORDER BY must use a GROUP BY column.\n");
+            return 0;
+        }
+    }
+    if (strcmp(aggregate_column, "*") != 0 &&
+        !trm_equals_ignore_case(aggregate_column, "ID") &&
+        !trm_equals_ignore_case(aggregate_column, "VALUE"))
+    {
+        printf("TRM Error: Invalid aggregate column.\n");
+        return 0;
+    }
     if ((aggregate_type == SQL_AGGREGATE_SUM || aggregate_type == SQL_AGGREGATE_AVG) &&
         !trm_equals_ignore_case(aggregate_column, "ID"))
     {
@@ -979,17 +1010,13 @@ int table_record_manager_group_by(
     }
 
     int table_id;
-    if (!get_table_id(table_name, &table_id))
-        return 0;
-
+    if (!get_table_id(table_name, &table_id)) return 0;
     memset(groups, 0, sizeof(groups));
 
     for (int i = 0; i < database.record_count; i++)
     {
         TRM_Record *record = &database.records[i];
-        if (record->table_id != table_id)
-            continue;
-
+        if (record->table_id != table_id) continue;
         if (expression_count > 0)
         {
             int matches = trm_evaluate_expression(record, expression_count, expression);
@@ -998,25 +1025,16 @@ int table_record_manager_group_by(
                 printf("TRM Error: Invalid WHERE expression.\n");
                 return 0;
             }
-            if (!matches)
-                continue;
+            if (!matches) continue;
         }
-
-        const char *group_value = trm_equals_ignore_case(group_column, "ID")
-                                      ? record->key : record->value;
-        if (group_value[0] == '\0')
-            continue;
 
         int group_index = -1;
         for (int g = 0; g < group_count; g++)
         {
-            if (strcmp(groups[g].group_value, group_value) == 0)
-            {
-                group_index = g;
-                break;
-            }
+            int same_key = !has_id || strcmp(groups[g].key, record->key) == 0;
+            int same_value = !has_value || strcmp(groups[g].value, record->value) == 0;
+            if (same_key && same_value) { group_index = g; break; }
         }
-
         if (group_index < 0)
         {
             if (group_count >= TRM_MAX_RECORDS)
@@ -1025,20 +1043,18 @@ int table_record_manager_group_by(
                 return 0;
             }
             group_index = group_count++;
-            strncpy(groups[group_index].group_value, group_value,
-                    sizeof(groups[group_index].group_value) - 1);
+            strcpy(groups[group_index].key, record->key);
+            strcpy(groups[group_index].value, record->value);
         }
 
         TRM_Group *group = &groups[group_index];
         const char *aggregate_value = NULL;
         if (strcmp(aggregate_column, "*") != 0)
-            aggregate_value = trm_equals_ignore_case(aggregate_column, "ID")
-                                  ? record->key : record->value;
+            aggregate_value = trm_equals_ignore_case(aggregate_column, "ID") ? record->key : record->value;
 
         if (aggregate_type == SQL_AGGREGATE_COUNT)
         {
-            if (strcmp(aggregate_column, "*") == 0 ||
-                (aggregate_value != NULL && aggregate_value[0] != '\0'))
+            if (strcmp(aggregate_column, "*") == 0 || (aggregate_value && aggregate_value[0] != '\0'))
                 group->count++;
         }
         else if (aggregate_value != NULL && aggregate_value[0] != '\0')
@@ -1057,8 +1073,7 @@ int table_record_manager_group_by(
             }
             else
             {
-                if (group->extreme == NULL)
-                    group->extreme = aggregate_value;
+                if (group->extreme == NULL) group->extreme = aggregate_value;
                 else
                 {
                     int cmp = compare_values(aggregate_value, group->extreme);
@@ -1071,18 +1086,19 @@ int table_record_manager_group_by(
         }
     }
 
-    /* Sort grouped rows by their grouping key when ORDER BY is requested. */
     if (order_by_column != NULL)
     {
         for (int i = 1; i < group_count; i++)
         {
             TRM_Group current = groups[i];
+            const char *current_sort = trm_equals_ignore_case(order_by_column, "ID") ? current.key : current.value;
             int j = i - 1;
             while (j >= 0)
             {
-                int cmp = compare_values(groups[j].group_value, current.group_value);
-                int should_move = order_desc ? (cmp < 0) : (cmp > 0);
-                if (!should_move) break;
+                const char *previous_sort = trm_equals_ignore_case(order_by_column, "ID") ? groups[j].key : groups[j].value;
+                int cmp = compare_values(previous_sort, current_sort);
+                int move = order_desc ? cmp < 0 : cmp > 0;
+                if (!move) break;
                 groups[j + 1] = groups[j];
                 j--;
             }
@@ -1100,40 +1116,34 @@ int table_record_manager_group_by(
         case SQL_AGGREGATE_MAX: function_name = "MAX"; break;
         default: break;
     }
-
-    printf("\n%s\t%s(%s)\n", group_column, function_name, aggregate_column);
+    if (has_id && has_value) printf("\nID\tVALUE\t%s(%s)\n", function_name, aggregate_column);
+    else if (has_id) printf("\nID\t%s(%s)\n", function_name, aggregate_column);
+    else printf("\nVALUE\t%s(%s)\n", function_name, aggregate_column);
     printf("----------------------------------------\n");
 
     for (int g = 0; g < group_count; g++)
     {
         TRM_Group *group = &groups[g];
-        printf("%s\t", group->group_value);
+        if (has_id && has_value) printf("%s\t%s\t", group->key, group->value);
+        else if (has_id) printf("%s\t", group->key);
+        else printf("%s\t", group->value);
         switch (aggregate_type)
         {
-            case SQL_AGGREGATE_COUNT:
-                printf("%d", group->count);
-                break;
-            case SQL_AGGREGATE_SUM:
-                printf("%.10g", group->sum);
-                break;
+            case SQL_AGGREGATE_COUNT: printf("%d", group->count); break;
+            case SQL_AGGREGATE_SUM: printf("%.10g", group->sum); break;
             case SQL_AGGREGATE_AVG:
                 if (group->count == 0) printf("NULL");
                 else printf("%.10g", group->sum / group->count);
                 break;
             case SQL_AGGREGATE_MIN:
-            case SQL_AGGREGATE_MAX:
-                printf("%s", group->extreme ? group->extreme : "NULL");
-                break;
-            default:
-                printf("NULL");
-                break;
+            case SQL_AGGREGATE_MAX: printf("%s", group->extreme ? group->extreme : "NULL"); break;
+            default: printf("NULL"); break;
         }
         printf("\n");
     }
     printf("----------------------------------------\n");
     return 1;
 }
-
 
 int table_record_manager_select(
     const char *table_name,
