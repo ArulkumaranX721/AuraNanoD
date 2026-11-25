@@ -68,9 +68,152 @@ static int insert_row(S6Tok*t,int n){if(n<7||!ieq(t[0].text,"insert")||!ieq(t[1]
  }
  rows.rows[rows.count++]=r;if(!save_rows()){rows.count--;puts("Sprint 6: failed to persist inserted row.");return 1;}printf("1 row inserted into %s.\n",tb->name);return 1;}
 static int cmpval(const char*a,const char*b){double x,y;if(numeric(a,&x)&&numeric(b,&y))return x>y?1:x<y?-1:0;return strcmp(a,b);}
+static int split_qualified(const char *name, char *table, size_t table_cap,
+                           char *column, size_t column_cap)
+{
+    const char *dot = strchr(name, '.');
+    if (!dot || dot == name || dot[1] == '\0') return 0;
+    size_t tn = (size_t)(dot - name);
+    if (tn >= table_cap || strlen(dot + 1) >= column_cap) return 0;
+    memcpy(table, name, tn);
+    table[tn] = '\0';
+    copy_text(column, column_cap, dot + 1);
+    return 1;
+}
+
+static int join_resolve_column(const char *name, const S6Table *left,
+                               const S6Table *right, int *side, int *column)
+{
+    char table_name[64], column_name[64];
+    if (split_qualified(name, table_name, sizeof(table_name),
+                        column_name, sizeof(column_name)))
+    {
+        if (ieq(table_name, left->name))
+        {
+            *side = 0;
+            *column = col_index(left, column_name);
+        }
+        else if (ieq(table_name, right->name))
+        {
+            *side = 1;
+            *column = col_index(right, column_name);
+        }
+        else return 0;
+        return *column >= 0;
+    }
+
+    int li = col_index(left, name);
+    int ri = col_index(right, name);
+    if (li >= 0 && ri >= 0) return -1; /* ambiguous */
+    if (li >= 0) { *side = 0; *column = li; return 1; }
+    if (ri >= 0) { *side = 1; *column = ri; return 1; }
+    return 0;
+}
+
+/* Sprint 7: basic INNER JOIN ... ON qualified_column = qualified_column. */
+static int join_query(S6Tok *t, int n)
+{
+    int from = -1, join = -1, on = -1;
+    for (int i = 1; i < n; i++)
+    {
+        if (ieq(t[i].text, "from") && from < 0) from = i;
+        if (ieq(t[i].text, "join") && join < 0) join = i;
+        if (ieq(t[i].text, "on") && on < 0) on = i;
+    }
+    if (from < 0 || join < 0 || on < 0 ||
+        join <= from + 1 || on <= join + 1 || on + 3 >= n)
+    {
+        puts("Sprint 7 JOIN: expected SELECT ... FROM table1 JOIN table2 ON table1.col = table2.col.");
+        return 1;
+    }
+
+    S6Table *left = find_table(t[from + 1].text);
+    int right_pos = join + 1;
+    if (ieq(t[right_pos].text, "inner")) right_pos++;
+    if (right_pos >= on) { puts("Sprint 7 JOIN: missing right table."); return 1; }
+    S6Table *right = find_table(t[right_pos].text);
+    if (!left || !right)
+    {
+        printf("Sprint 7 JOIN: table not found (%s or %s).\n",
+               t[from + 1].text, t[right_pos].text);
+        return 1;
+    }
+
+    int lside = -1, lcol = -1, rside = -1, rcol = -1;
+    int lr = join_resolve_column(t[on + 1].text, left, right, &lside, &lcol);
+    int rr = join_resolve_column(t[on + 3].text, left, right, &rside, &rcol);
+    if (strcmp(t[on + 2].text, "=") != 0 || lr != 1 || rr != 1 || lside == rside)
+    {
+        puts("Sprint 7 JOIN: ON must compare one column from each table using '='.");
+        return 1;
+    }
+
+    int proj_side[32], proj_col[32], pc = 0, star = 0;
+    for (int i = 1; i < from;)
+    {
+        if (strcmp(t[i].text, "*") == 0) { star = 1; i++; break; }
+        if (pc >= 32) { puts("Sprint 7 JOIN: too many selected columns."); return 1; }
+        int side = -1, col = -1;
+        int found = join_resolve_column(t[i].text, left, right, &side, &col);
+        if (found == -1) { printf("Sprint 7 JOIN: ambiguous column %s; qualify it with a table name.\n", t[i].text); return 1; }
+        if (found != 1) { printf("Sprint 7 JOIN: unknown column %s.\n", t[i].text); return 1; }
+        proj_side[pc] = side; proj_col[pc] = col; pc++;
+        i++;
+        if (i < from && strcmp(t[i].text, ",") == 0) i++;
+        else break;
+    }
+    if (star)
+    {
+        pc = 0;
+        for (int c = 0; c < left->column_count && pc < 32; c++) { proj_side[pc] = 0; proj_col[pc++] = c; }
+        for (int c = 0; c < right->column_count && pc < 32; c++) { proj_side[pc] = 1; proj_col[pc++] = c; }
+    }
+    if (pc == 0) { puts("Sprint 7 JOIN: select at least one column or use '*'."); return 1; }
+
+    /* Basic join intentionally supports the ON clause only in this sprint. */
+    int end_on = on + 4;
+    if (end_on < n && strcmp(t[end_on].text, ";") == 0) end_on++;
+    if (end_on != n)
+    {
+        puts("Sprint 7 JOIN: WHERE, GROUP BY, ORDER BY and LIMIT with JOIN are planned for a later stage.");
+        return 1;
+    }
+
+    for (int p = 0; p < pc; p++)
+    {
+        const S6Table *tb = proj_side[p] == 0 ? left : right;
+        printf("%-24s", tb->columns[proj_col[p]].name);
+    }
+    puts("");
+    for (int p = 0; p < pc; p++) printf("------------------------");
+    puts("");
+
+    int matched = 0;
+    for (int a = 0; a < rows.count; a++)
+    {
+        if (rows.rows[a].table_id != left->table_id) continue;
+        for (int b = 0; b < rows.count; b++)
+        {
+            if (rows.rows[b].table_id != right->table_id) continue;
+            const char *lv = lside == 0 ? rows.rows[a].values[lcol] : rows.rows[b].values[lcol];
+            const char *rv = rside == 0 ? rows.rows[a].values[rcol] : rows.rows[b].values[rcol];
+            if (cmpval(lv, rv) != 0) continue;
+            for (int p = 0; p < pc; p++)
+            {
+                const S6Row *r = proj_side[p] == 0 ? &rows.rows[a] : &rows.rows[b];
+                printf("%-24s", r->values[proj_col[p]]);
+            }
+            puts("");
+            matched++;
+        }
+    }
+    printf("%d row(s) selected.\n", matched);
+    return 1;
+}
+
 static int row_matches(const S6Table*t,const S6Row*r,int where,const char*wc,const char*op,const char*wv){if(!where)return 1;int ci=col_index(t,wc);if(ci<0){printf("Sprint 6 WHERE: unknown column %s.\n",wc);return 0;}int c=cmpval(r->values[ci],wv);if(!strcmp(op,"="))return c==0;if(!strcmp(op,"!=")||!strcmp(op,"<>"))return c!=0;if(!strcmp(op,">"))return c>0;if(!strcmp(op,"<"))return c<0;if(!strcmp(op,">="))return c>=0;if(!strcmp(op,"<="))return c<=0;return 0;}
 static void print_header(S6Table*t,int*proj,int pc,int count){for(int i=0;i<pc;i++)printf("%-18s",count&&i==pc-1?"COUNT(*)":t->columns[proj[i]].name);puts("");for(int i=0;i<pc;i++)printf("------------------");puts("");}
-static int select_query(S6Tok*t,int n){if(n<4||!ieq(t[0].text,"select"))return 0;int from=-1;for(int i=1;i<n;i++)if(ieq(t[i].text,"from")){from=i;break;}if(from<0||from+1>=n)return 0;S6Table*tb=find_table(t[from+1].text);if(!tb)return 0;
+static int select_query(S6Tok*t,int n){if(n<4||!ieq(t[0].text,"select"))return 0;for(int j=1;j<n;j++)if(ieq(t[j].text,"join"))return join_query(t,n);int from=-1;for(int i=1;i<n;i++)if(ieq(t[i].text,"from")){from=i;break;}if(from<0||from+1>=n)return 0;S6Table*tb=find_table(t[from+1].text);if(!tb)return 0;
  int proj[S6_MAX_COLUMNS],pc=0,star=0,count=0;for(int i=1;i<from;){if(strcmp(t[i].text,"*")==0){star=1;i++;break;}if(ieq(t[i].text,"count")&&i+3<from&&strcmp(t[i+1].text,"(")==0&&strcmp(t[i+2].text,"*")==0&&strcmp(t[i+3].text,")")==0){count=1;i+=4;break;}int ci=col_index(tb,t[i].text);if(ci<0){printf("Sprint 6 SELECT: unknown column %s.\n",t[i].text);return 1;}proj[pc++]=ci;i++;if(i<from&&strcmp(t[i].text,",")==0)i++;else break;}
  if(star){pc=tb->column_count;for(int i=0;i<pc;i++)proj[i]=i;}if(count&&pc==0)proj[pc++]=0;
  int where=0,group=-1,order=-1,desc=0,limit=-1;char wc[64]="",op[4]="",wv[S6_VALUE]="";int i=from+2;
