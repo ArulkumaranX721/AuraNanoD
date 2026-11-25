@@ -10,6 +10,7 @@
 #include "SQLParser.h"
 #include "TableRecordManager.h"
 #include "TableManager.h"
+#include "SQL6.h"
 
 
 void show_help(void)
@@ -35,8 +36,10 @@ printf("BPWRITE <id> <text> - Write text through the buffer pool\n");
 printf("BPREAD <id> - Read text through the buffer pool\n");
 printf("BPRESET - Reset cache statistics\n");
 printf("\nSQL Commands:\n");
-printf("CREATE TABLE <name> - Create a table\n");
-printf("INSERT INTO <table> VALUES ('key', 'value')\n");
+printf("CREATE TABLE <name> - Create a legacy ID/VALUE table\n");
+printf("CREATE TABLE <name> (col TYPE, ...) - Create a Sprint 6 schema table\n");
+printf("INSERT INTO <table> VALUES ('key', 'value') - legacy table\n");
+printf("INSERT INTO <table> VALUES (v1, v2, ...) - schema table\n");
 printf("SELECT * FROM <table> - Display table records\n");
 printf("UPDATE <table> SET value = 'new value' WHERE id = 'key';\n");
 printf("DELETE FROM <table> WHERE id = 'key';\n");
@@ -103,6 +106,12 @@ void show_version(void)
 
 void execute_sql_command(const char *sql)
 {
+    /* Sprint 6 schema SQL runs first; legacy ID/VALUE SQL remains supported. */
+    if (sql6_execute(sql))
+    {
+        return;
+    }
+
     SQLTokenList tokens;
     SQLStatement statement;
 

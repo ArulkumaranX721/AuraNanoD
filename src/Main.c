@@ -6,6 +6,7 @@
 #include "BufferPool.h"
 #include "TableManager.h"
 #include "TableRecordManager.h"
+#include "SQL6.h"
 
 void command_loop(DatabaseConfig *database);
 
@@ -49,6 +50,13 @@ if (!buffer_pool_initialize())
 if (!table_manager_initialize())
 {
     printf("Could not initialize Table Manager.\n");
+    return 1;
+}
+
+/* Sprint 6: load user-defined table schemas and row storage. */
+if (!sql6_initialize())
+{
+    printf("Could not initialize Sprint 6 schema engine.\n");
     return 1;
 }
 
